@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="112" fill="#0F172A"/>
+  <!-- Rapid KL multi-line accent bars -->
+  <rect x="96" y="388" width="96" height="22" rx="11" fill="#047857"/>
+  <rect x="208" y="388" width="96" height="22" rx="11" fill="#E11D48"/>
+  <rect x="320" y="388" width="96" height="22" rx="11" fill="#EAB308"/>
+  <!-- Modern Front-Facing MRT Train Glyph -->
+  <rect x="136" y="100" width="240" height="236" rx="48" fill="#FFFFFF"/>
+  <rect x="168" y="138" width="176" height="96" rx="22" fill="#0F172A"/>
+  <!-- Destination display bar -->
+  <rect x="204" y="114" width="104" height="12" rx="6" fill="#0EA5E9"/>
+  <!-- Headlights -->
+  <circle cx="192" cy="284" r="18" fill="#0F172A"/>
+  <circle cx="320" cy="284" r="18" fill="#0F172A"/>
+  <circle cx="192" cy="284" r="8" fill="#38BDF8"/>
+  <circle cx="320" cy="284" r="8" fill="#38BDF8"/>
+  <!-- Rail tracks -->
+  <path d="M188 336L164 368H198L216 336H188Z" fill="#CBD5E1"/>
+  <path d="M324 336L348 368H314L296 336H324Z" fill="#CBD5E1"/>
+</svg>

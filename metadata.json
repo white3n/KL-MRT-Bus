@@ -1,0 +1,6 @@
+{
+  "name": "KL Transit Live",
+  "description": "Theo dõi lịch tàu MRT, LRT, Monorail và vị trí GPS trực tiếp xe Bus Rapid KL tại Kuala Lumpur từ dữ liệu mở chính thức Malaysia (api.data.gov.my).",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": []
+}
