@@ -12,25 +12,33 @@ export interface FontOption {
 
 export const PRESET_GOOGLE_FONTS: FontOption[] = [
   {
+    family: 'Nunito',
+    label: 'Nunito',
+    tag: 'Mặc định · Tròn to dễ thương (Transit Style)',
+    sample: 'T401 · 6 phút nữa xe tới trạm',
+    scalePercent: 100,
+    category: 'sans-serif',
+  },
+  {
     family: 'Be Vietnam Pro',
     label: 'Be Vietnam Pro',
-    tag: 'Mặc định · Sans-serif hiện đại',
+    tag: 'Sans-serif gọn hiện đại',
     sample: 'KLCC · 3 phút nữa tàu đến ga',
     scalePercent: 100,
+    category: 'sans-serif',
+  },
+  {
+    family: 'Fredoka',
+    label: 'Fredoka',
+    tag: 'Bo tròn cực dễ thương · Nổi bật',
+    sample: 'T401 · 6 phút nữa xe tới trạm',
+    scalePercent: 98,
     category: 'sans-serif',
   },
   {
     family: 'Roboto',
     label: 'Roboto',
     tag: 'Chuẩn Android Material',
-    sample: 'KLCC · 3 phút nữa tàu đến ga',
-    scalePercent: 100,
-    category: 'sans-serif',
-  },
-  {
-    family: 'Nunito',
-    label: 'Nunito',
-    tag: 'Bo tròn mềm mại · Dễ nhìn',
     sample: 'KLCC · 3 phút nữa tàu đến ga',
     scalePercent: 100,
     category: 'sans-serif',
@@ -60,14 +68,6 @@ export const PRESET_GOOGLE_FONTS: FontOption[] = [
     category: 'serif',
   },
   {
-    family: 'Merriweather',
-    label: 'Merriweather',
-    tag: 'Có chân (Serif) · Đậm nét',
-    sample: 'KLCC · 3 phút nữa tàu đến ga',
-    scalePercent: 92,
-    category: 'serif',
-  },
-  {
     family: 'Patrick Hand',
     label: 'Patrick Hand',
     tag: 'Chữ viết tay · Vui mắt',
@@ -77,8 +77,8 @@ export const PRESET_GOOGLE_FONTS: FontOption[] = [
   },
 ];
 
-const STORAGE_KEY = 'kl_transit_app_font_v1';
-const DEFAULT_FONT = 'Be Vietnam Pro';
+const STORAGE_KEY = 'kl_transit_app_font_v2';
+const DEFAULT_FONT = 'Nunito';
 const LINK_ID = 'kl-dynamic-google-font';
 
 function readSavedFont(): string {

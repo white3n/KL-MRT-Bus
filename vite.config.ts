@@ -36,12 +36,12 @@ export default defineConfig(() => {
               },
             },
             {
-              urlPattern: /^https:\/\/server\.arcgisonline\.com\/ArcGIS\/rest\/services\/World_Street_Map\/.*/i,
+              urlPattern: /^https:\/\/server\.arcgisonline\.com\/ArcGIS\/rest\/services\/.*/i,
               handler: 'CacheFirst',
               options: {
                 cacheName: 'kl-esri-tiles-cache',
                 expiration: {
-                  maxEntries: 250,
+                  maxEntries: 400,
                   maxAgeSeconds: 60 * 60 * 24 * 30,
                 },
                 cacheableResponse: {

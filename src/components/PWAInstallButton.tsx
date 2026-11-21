@@ -22,23 +22,23 @@ export function PWAInstallButton() {
   };
 
   return (
-    <div className="p-3 border-t border-slate-200/80 bg-white shrink-0">
+    <div className="p-2.5 border-t border-white/10 bg-[#0b0f17] shrink-0">
       <button
         type="button"
         onClick={handleClick}
-        className="w-full px-3.5 py-2.5 flex items-center justify-between gap-2 bg-blue-50/70 hover:bg-blue-50 border border-blue-200/70 rounded-2xl text-xs font-semibold text-slate-800 active:scale-[0.99] transition-all cursor-pointer"
+        className="w-full px-3.5 py-2.5 flex items-center justify-between gap-2 bg-emerald-500/15 hover:bg-emerald-500/22 border border-emerald-400/25 rounded-2xl text-xs font-extrabold text-emerald-100 active:scale-[0.99] transition-all cursor-pointer"
       >
         <span className="inline-flex items-center gap-2 min-w-0">
           {isInstallable ? (
-            <Download className="w-4 h-4 text-blue-600 shrink-0" />
+            <Download className="w-4 h-4 text-emerald-400 shrink-0" />
           ) : (
-            <Smartphone className="w-4 h-4 text-blue-600 shrink-0" />
+            <Smartphone className="w-4 h-4 text-emerald-400 shrink-0" />
           )}
           <span className="truncate">
             {isInstallable ? t.pwaInstallCta : t.pwaGuideCta}
           </span>
         </span>
-        <span className="px-2.5 py-0.5 rounded-full bg-blue-600 text-[11px] font-semibold text-white whitespace-nowrap shrink-0">
+        <span className="px-2.5 py-0.5 rounded-full bg-emerald-500 text-[11px] font-black text-slate-950 whitespace-nowrap shrink-0">
           {isInstallable ? t.pwaInstallNow : t.pwaGuideBtn}
         </span>
       </button>

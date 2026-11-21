@@ -82,12 +82,12 @@ export function PullToRefresh({
       onTouchCancel={handleTouchEnd}
       className={className}
     >
-      {/* Material 3 Pull-to-Refresh Header Indicator */}
+      {/* Dark Transit Pull-to-Refresh Header Indicator */}
       <div
-        className="overflow-hidden flex items-center justify-center transition-[height] duration-150 bg-slate-50/90"
+        className="overflow-hidden flex items-center justify-center transition-[height] duration-150 bg-[#0b0f17]"
         style={{ height: visible ? `${Math.max(40, pullDist)}px` : '0px' }}
       >
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-slate-200 shadow-xs text-xs font-semibold text-blue-700">
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#161e2e] border border-white/12 shadow-md text-xs font-extrabold text-emerald-400">
           <RefreshCw
             className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`}
             style={

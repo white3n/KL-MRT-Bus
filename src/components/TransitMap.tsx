@@ -6,13 +6,16 @@ import {
   BookmarkPlus,
   Bus,
   Crosshair,
+  Globe2,
   Layers,
   LocateFixed,
+  Moon,
   Navigation,
+  Sun,
   TrainFront,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { matchesMyBusStationStrict, type MyBusStation } from '../hooks/useMyStations';
 import { translations, useLanguage } from '../i18n';
 import type {
@@ -26,45 +29,84 @@ import type {
   UserLocation,
 } from '../types/transit';
 import type { DirectionsTarget } from '../utils/directionsHelper';
+import { getTransitPalette } from '../utils/transitTheme';
 import { normalizeSearch } from '../utils/transitHelpers';
 
 const KL_CENTER: [number, number] = [3.1478, 101.6953];
 const KL_DEFAULT_ZOOM = 12;
 
-interface TileProvider {
-  name: string;
-  url: string;
-  options: L.TileLayerOptions;
+type MapStyleId = 'dark' | 'street' | 'satellite';
+const MAP_STYLE_KEY = 'kl_transit_map_style_v1';
+
+interface BasemapConfig {
+  id: MapStyleId;
+  label: string;
+  baseUrl: string;
+  baseOptions: L.TileLayerOptions;
+  overlayUrl?: string;
+  overlayOptions?: L.TileLayerOptions;
 }
 
-// Free, no-API-key tile providers (OpenStreetMap Standard primary + free fallbacks)
-const TILE_PROVIDERS: TileProvider[] = [
-  {
-    name: 'OpenStreetMap',
-    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-    options: {
+// Sleek, keyless, watermark-free basemaps (Transit Dark primary + Esri Street + Satellite)
+const BASEMAP_CONFIGS: Record<MapStyleId, BasemapConfig> = {
+  dark: {
+    id: 'dark',
+    label: 'Dark',
+    baseUrl:
+      'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    baseOptions: {
+      maxNativeZoom: 16,
       maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors · api.data.gov.my',
+      attribution: 'Tiles &copy; Esri · api.data.gov.my',
+    },
+    overlayUrl:
+      'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
+    overlayOptions: {
+      maxNativeZoom: 16,
+      maxZoom: 19,
+      opacity: 0.92,
     },
   },
-  {
-    name: 'Esri World Street Map',
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
-    options: {
+  street: {
+    id: 'street',
+    label: 'Street',
+    baseUrl:
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+    baseOptions: {
+      maxNativeZoom: 18,
       maxZoom: 19,
-      attribution: 'Tiles &copy; Esri · OpenStreetMap · api.data.gov.my',
+      attribution: 'Tiles &copy; Esri · api.data.gov.my',
     },
   },
-  {
-    name: 'OSM Humanitarian',
-    url: 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
-    options: {
-      subdomains: 'abc',
+  satellite: {
+    id: 'satellite',
+    label: 'Satellite',
+    baseUrl:
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    baseOptions: {
+      maxNativeZoom: 18,
       maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors, HOT · api.data.gov.my',
+      attribution: 'Tiles &copy; Esri · api.data.gov.my',
+    },
+    overlayUrl:
+      'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
+    overlayOptions: {
+      maxNativeZoom: 18,
+      maxZoom: 19,
+      opacity: 0.85,
     },
   },
-];
+};
+
+function readInitialMapStyle(): MapStyleId {
+  try {
+    const saved = window.localStorage.getItem(MAP_STYLE_KEY);
+    if (saved === 'dark' || saved === 'street' || saved === 'satellite') return saved;
+  } catch {
+    // ignore
+  }
+  return 'dark';
+}
 
 interface TransitMapProps {
   mode: TransitMode;
@@ -110,52 +152,51 @@ function filterValidCoords(points: [number, number][]): [number, number][] {
 }
 
 function createBusMarkerIcon(bus: LiveBusVehicle, isSelected: boolean): L.DivIcon {
-  const stroke = isSelected ? '#0F172A' : '#FFFFFF';
-  const strokeWidth = isSelected ? 2.4 : 2;
+  const accent = bus.category === 'rapid-bus-mrtfeeder' ? '#ef4436' : '#3b82f6';
   const scale = isSelected ? 1.18 : 1;
-  const halo = isSelected
-    ? 'filter: drop-shadow(0 4px 10px rgba(15,23,42,0.45));'
-    : 'filter: drop-shadow(0 2px 5px rgba(15,23,42,0.28));';
-  const pillBorder = isSelected ? '#0F172A' : '#FFFFFF';
+  const ageTxt =
+    bus.updatedSecondsAgo < 60
+      ? `${bus.updatedSecondsAgo}s`
+      : `${Math.round(bus.updatedSecondsAgo / 60)}m`;
 
-  // Top-down directional bus SVG facing North (0 deg), rotated smoothly to bus.bearing
-  // Clearly shows curved front windshield + glowing headlights + forward beam vs flat rear taillights
+  // Transit-App inspired crisp circular bus badge + directional heading arrow + live GPS age badge + chunky route pill
   const html = `
-    <div style="transform: scale(${scale}); display:flex; flex-direction:column; align-items:center; pointer-events:auto; ${halo}">
-      <div style="width:36px; height:36px; display:flex; align-items:center; justify-content:center; transform:rotate(${bus.bearing}deg); will-change:transform;">
-        <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <!-- Subtle forward headlight cone showing travel direction -->
-          <path d="M18 0.5 L25.5 7.5 L10.5 7.5 Z" fill="${bus.color}" fill-opacity="0.34" />
-          <!-- Side mirrors near the front nose -->
-          <rect x="7.5" y="9.5" width="3" height="2" rx="1" fill="${stroke}" />
-          <rect x="25.5" y="9.5" width="3" height="2" rx="1" fill="${stroke}" />
-          <!-- Bus body (rounded front nose at top, flatter rear at bottom) -->
-          <path d="M11 11 C11 7.2 13.4 6 18 6 C22.6 6 25 7.2 25 11 L25 28.5 C25 30.4 23.6 31.5 21.8 31.5 L14.2 31.5 C12.4 31.5 11 30.4 11 28.5 Z" fill="${bus.color}" stroke="${stroke}" stroke-width="${strokeWidth}" />
-          <!-- Panoramic front windshield (clearly marks the front of the bus) -->
-          <path d="M13 11.2 C13 9.2 14.8 8.3 18 8.3 C21.2 8.3 23 9.2 23 11.2 L22.4 14 C22.3 14.5 21.8 14.8 21.2 14.8 L14.8 14.8 C14.2 14.8 13.7 14.5 13.6 14 Z" fill="#E0F2FE" />
-          <!-- Bright front headlights -->
-          <circle cx="13.2" cy="7.6" r="1.4" fill="#FEF08A" />
-          <circle cx="22.8" cy="7.6" r="1.4" fill="#FEF08A" />
-          <!-- Roof AC detail -->
-          <rect x="14.5" y="17.5" width="7" height="7.5" rx="2" fill="#FFFFFF" fill-opacity="0.28" />
-          <!-- Rear red taillights -->
-          <rect x="12.6" y="29.4" width="3" height="1.5" rx="0.7" fill="#FDA4AF" />
-          <rect x="20.4" y="29.4" width="3" height="1.5" rx="0.7" fill="#FDA4AF" />
-        </svg>
+    <div style="transform: scale(${scale}); display:flex; flex-direction:column; align-items:center; pointer-events:auto; filter: drop-shadow(0 4px 10px rgba(0,0,0,0.55));">
+      <div style="position:relative; width:38px; height:38px; display:flex; align-items:center; justify-content:center;">
+        <!-- Rotating heading pointer around the badge -->
+        <div style="position:absolute; inset:0; transform:rotate(${bus.bearing}deg); will-change:transform;">
+          <svg width="38" height="38" viewBox="0 0 38 38" fill="none">
+            <path d="M19 0 L24 8 L14 8 Z" fill="${accent}" stroke="#ffffff" stroke-width="1.2" stroke-linejoin="round" />
+          </svg>
+        </div>
+        <!-- Crisp white Transit circle with front-facing bus & live signal arc -->
+        <div style="width:28px; height:28px; border-radius:9999px; background:#ffffff; border:2.4px solid ${accent}; display:flex; align-items:center; justify-content:center; position:relative; z-index:2;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <path d="M7.5 3.2C9.8 1.9 14.2 1.9 16.5 3.2" stroke="${accent}" stroke-width="2" stroke-linecap="round" opacity="0.7" />
+            <rect x="5" y="6" width="14" height="12" rx="3.2" fill="${accent}" />
+            <rect x="7" y="8" width="10" height="4.5" rx="1.2" fill="#ffffff" />
+            <circle cx="8.2" cy="15.2" r="1.2" fill="#ffffff" />
+            <circle cx="15.8" cy="15.2" r="1.2" fill="#ffffff" />
+            <rect x="6.5" y="18" width="2.4" height="2" rx="1" fill="${accent}" />
+            <rect x="15.1" y="18" width="2.4" height="2" rx="1" fill="${accent}" />
+          </svg>
+        </div>
+        <!-- Compact live GPS age pill like Transit App ("12s" / "1m") -->
+        <div style="position:absolute; top:-2px; right:-6px; z-index:3; background:${accent}; color:#ffffff; border:1.5px solid #0b0f17; border-radius:9999px; padding:0 4px; font-family:'Nunito',sans-serif; font-size:9px; font-weight:900; line-height:13px;">${ageTxt}</div>
       </div>
       <div style="
-        margin-top:-4px;
-        background:${bus.color};
+        margin-top:-2px;
+        background:${accent};
         color:#FFFFFF;
-        border:1.8px solid ${pillBorder};
-        border-radius:9999px;
+        border:1.8px solid #ffffff;
+        border-radius:8px;
         padding:0px 6px;
-        font-family:'JetBrains Mono',monospace;
+        font-family:'Nunito',sans-serif;
         font-size:10px;
-        font-weight:800;
+        font-weight:900;
         line-height:15px;
         white-space:nowrap;
-        box-shadow:0 2px 5px rgba(15,23,42,0.28);
+        letter-spacing:-0.01em;
       ">${bus.routeShortName}</div>
     </div>
   `;
@@ -163,8 +204,8 @@ function createBusMarkerIcon(bus: LiveBusVehicle, isSelected: boolean): L.DivIco
   return L.divIcon({
     html,
     className: 'kl-bus-div-icon',
-    iconSize: [44, 48],
-    iconAnchor: [22, 18],
+    iconSize: [48, 52],
+    iconAnchor: [24, 19],
   });
 }
 
@@ -204,6 +245,8 @@ export function TransitMap({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
+  const overlayTileLayerRef = useRef<L.TileLayer | null>(null);
+  const [mapStyle, setMapStyle] = useState<MapStyleId>(readInitialMapStyle);
   const railLinesLayerRef = useRef<L.LayerGroup | null>(null);
   const stationsLayerRef = useRef<L.LayerGroup | null>(null);
   const busRouteLayerRef = useRef<L.LayerGroup | null>(null);
@@ -211,6 +254,17 @@ export function TransitMap({
   const userLocationLayerRef = useRef<L.LayerGroup | null>(null);
   const pendingFocusRef = useRef<{ lat: number; lon: number; zoom: number } | null>(null);
   const hasRenderedVisibleRef = useRef(false);
+
+  const cycleMapStyle = () => {
+    const order: MapStyleId[] = ['dark', 'street', 'satellite'];
+    const next = order[(order.indexOf(mapStyle) + 1) % order.length];
+    setMapStyle(next);
+    try {
+      window.localStorage.setItem(MAP_STYLE_KEY, next);
+    } catch {
+      // ignore
+    }
+  };
 
   const safeFocus = (map: L.Map, lat: number, lon: number, targetZoom: number, animate = true) => {
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
@@ -243,7 +297,7 @@ export function TransitMap({
     }
   };
 
-  // Initialize Leaflet map once with standard OpenStreetMap + automatic free fallback
+  // Initialize Leaflet map once
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
@@ -254,32 +308,6 @@ export function TransitMap({
       preferCanvas: false,
       fadeAnimation: true,
     });
-
-    let providerIndex = 0;
-    let consecutiveTileErrors = 0;
-
-    const attachTileLayer = (idx: number) => {
-      if (tileLayerRef.current) {
-        map.removeLayer(tileLayerRef.current);
-      }
-      const provider = TILE_PROVIDERS[idx];
-      const layer = L.tileLayer(provider.url, provider.options);
-      layer.on('tileload', () => {
-        consecutiveTileErrors = 0;
-      });
-      layer.on('tileerror', () => {
-        consecutiveTileErrors += 1;
-        if (consecutiveTileErrors >= 4 && providerIndex < TILE_PROVIDERS.length - 1) {
-          consecutiveTileErrors = 0;
-          providerIndex += 1;
-          attachTileLayer(providerIndex);
-        }
-      });
-      layer.addTo(map);
-      tileLayerRef.current = layer;
-    };
-
-    attachTileLayer(0);
 
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
@@ -328,9 +356,47 @@ export function TransitMap({
       map.remove();
       mapRef.current = null;
       tileLayerRef.current = null;
+      overlayTileLayerRef.current = null;
       hasRenderedVisibleRef.current = false;
     };
   }, []);
+
+  // Swap basemap tiles cleanly whenever mapStyle changes (Dark / Street / Satellite)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (tileLayerRef.current) {
+      map.removeLayer(tileLayerRef.current);
+      tileLayerRef.current = null;
+    }
+    if (overlayTileLayerRef.current) {
+      map.removeLayer(overlayTileLayerRef.current);
+      overlayTileLayerRef.current = null;
+    }
+
+    const cfg = BASEMAP_CONFIGS[mapStyle];
+    let errorCount = 0;
+    const baseLayer = L.tileLayer(cfg.baseUrl, cfg.baseOptions);
+    baseLayer.on('tileload', () => {
+      errorCount = 0;
+    });
+    baseLayer.on('tileerror', () => {
+      errorCount += 1;
+      if (errorCount >= 6 && mapStyle === 'dark') {
+        setMapStyle('street');
+      }
+    });
+    baseLayer.addTo(map);
+    baseLayer.bringToBack();
+    tileLayerRef.current = baseLayer;
+
+    if (cfg.overlayUrl) {
+      const overlayLayer = L.tileLayer(cfg.overlayUrl, cfg.overlayOptions);
+      overlayLayer.addTo(map);
+      overlayTileLayerRef.current = overlayLayer;
+    }
+  }, [mapStyle]);
 
   // Explicitly resync Leaflet when switching to map tab on mobile / Android WebView
   useEffect(() => {
@@ -703,11 +769,11 @@ export function TransitMap({
     : null;
 
   return (
-    <div className="relative w-full h-full bg-slate-100">
+    <div className="relative w-full h-full bg-[#16191f]">
       <div ref={containerRef} className="absolute inset-0 z-0" />
 
-      {/* Mobile Floating Material 3 Map Layer Switcher (top-left) */}
-      <div className="md:hidden absolute top-3.5 left-3.5 z-[400] inline-flex items-center gap-1 p-1 rounded-2xl bg-white/95 backdrop-blur-xs border border-slate-200/90 shadow-md">
+      {/* Mobile Floating Transit Dark Layer Switcher (top-left) */}
+      <div className="md:hidden absolute top-3.5 left-3.5 z-[400] inline-flex items-center gap-1 p-1 rounded-2xl bg-[#111622]/92 backdrop-blur-md border border-white/15 shadow-xl">
         {(
           [
             { id: 'rail' as const, label: t.modeRail, icon: TrainFront },
@@ -722,8 +788,10 @@ export function TransitMap({
               key={item.id}
               type="button"
               onClick={() => onModeChange(item.id)}
-              className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition-all active:scale-95 cursor-pointer ${
-                active ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'
+              className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-extrabold transition-all active:scale-95 cursor-pointer ${
+                active
+                  ? 'bg-emerald-500 text-slate-950 shadow-xs'
+                  : 'text-slate-300 hover:bg-white/10'
               }`}
             >
               <Icon className="w-3.5 h-3.5 shrink-0" />
@@ -733,31 +801,31 @@ export function TransitMap({
         })}
       </div>
 
-      {/* Active Bus Filter Banner on Map (shows which inspected bus route's live fleet is displayed) */}
+      {/* Active Bus Filter Banner on Map */}
       {activeBusFilterLabel && (
-        <div className="absolute top-16 md:top-3.5 left-3.5 z-[400] inline-flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-full bg-slate-900/95 text-white shadow-lg text-xs font-semibold">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+        <div className="absolute top-16 md:top-3.5 left-3.5 z-[400] inline-flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-full bg-[#ef4436] text-white shadow-xl text-xs font-extrabold border border-white/25">
+          <span className="w-2 h-2 rounded-full bg-white animate-pulse shrink-0" />
           <span>{t.mapBusFilterChip(activeBusFilterLabel, visibleMapBuses.length)}</span>
           <button
             type="button"
             onClick={onClearBusFilter}
             aria-label={t.clearFilters}
-            className="w-5 h-5 inline-flex items-center justify-center rounded-full bg-white/15 hover:bg-white/25 cursor-pointer"
+            className="w-5 h-5 inline-flex items-center justify-center rounded-full bg-black/25 hover:bg-black/40 cursor-pointer"
           >
             <X className="w-3 h-3" />
           </button>
         </div>
       )}
 
-      {/* Material 3 Floating Map Controls (top-right) */}
-      <div className="absolute top-3.5 right-3.5 z-[400] flex flex-col gap-2.5">
+      {/* Sleek Dark Floating Map Controls (top-right) */}
+      <div className="absolute top-3.5 right-3.5 z-[400] flex flex-col gap-2">
         <button
           type="button"
           onClick={onRequestLocation}
           disabled={isLocating}
           aria-label={t.mapGpsTitle}
           title={t.mapGpsTitle}
-          className="inline-flex items-center justify-center gap-2 h-11 min-w-11 px-3 sm:px-3.5 bg-blue-600 hover:bg-blue-700 active:scale-95 disabled:opacity-70 text-white rounded-2xl shadow-md shadow-blue-600/25 text-xs font-semibold transition-all cursor-pointer"
+          className="inline-flex items-center justify-center gap-2 h-11 min-w-11 px-3 sm:px-3.5 bg-emerald-500 hover:bg-emerald-400 active:scale-95 disabled:opacity-70 text-slate-950 rounded-2xl shadow-lg shadow-emerald-950/40 text-xs font-extrabold transition-all cursor-pointer"
         >
           <LocateFixed className={`w-4.5 h-4.5 ${isLocating ? 'animate-spin' : ''}`} />
           <span className="hidden sm:inline">
@@ -767,12 +835,29 @@ export function TransitMap({
 
         <button
           type="button"
+          onClick={cycleMapStyle}
+          aria-label="Switch map style"
+          title={`Map style: ${BASEMAP_CONFIGS[mapStyle].label}`}
+          className="inline-flex items-center justify-center gap-2 h-11 min-w-11 px-3 sm:px-3.5 bg-[#111622]/92 hover:bg-[#1a2233] active:scale-95 text-white border border-white/15 rounded-2xl shadow-lg text-xs font-bold transition-all cursor-pointer"
+        >
+          {mapStyle === 'dark' ? (
+            <Moon className="w-4 h-4 text-emerald-400" />
+          ) : mapStyle === 'street' ? (
+            <Sun className="w-4 h-4 text-amber-400" />
+          ) : (
+            <Globe2 className="w-4 h-4 text-sky-400" />
+          )}
+          <span className="hidden sm:inline">{BASEMAP_CONFIGS[mapStyle].label}</span>
+        </button>
+
+        <button
+          type="button"
           onClick={handleRecenter}
           aria-label={t.mapRecenterTitle}
           title={t.mapRecenterTitle}
-          className="inline-flex items-center justify-center gap-2 h-11 min-w-11 px-3 sm:px-3.5 bg-white/95 hover:bg-white active:scale-95 text-slate-800 border border-slate-200/90 rounded-2xl shadow-md text-xs font-semibold transition-all cursor-pointer"
+          className="inline-flex items-center justify-center gap-2 h-11 min-w-11 px-3 sm:px-3.5 bg-[#111622]/92 hover:bg-[#1a2233] active:scale-95 text-white border border-white/15 rounded-2xl shadow-lg text-xs font-bold transition-all cursor-pointer"
         >
-          <Crosshair className="w-4.5 h-4.5 text-slate-700" />
+          <Crosshair className="w-4.5 h-4.5 text-slate-300" />
           <span className="hidden sm:inline">{t.mapRecenterLabel}</span>
         </button>
 
@@ -781,9 +866,9 @@ export function TransitMap({
           onClick={onToggleMode}
           aria-label={t.mapLayerTitle}
           title={t.mapLayerTitle}
-          className="hidden md:inline-flex items-center justify-center gap-2 h-11 min-w-11 px-3 sm:px-3.5 bg-white/95 hover:bg-white active:scale-95 text-slate-800 border border-slate-200/90 rounded-2xl shadow-md text-xs font-semibold transition-all cursor-pointer"
+          className="hidden md:inline-flex items-center justify-center gap-2 h-11 min-w-11 px-3 sm:px-3.5 bg-[#111622]/92 hover:bg-[#1a2233] active:scale-95 text-white border border-white/15 rounded-2xl shadow-lg text-xs font-bold transition-all cursor-pointer"
         >
-          <Layers className="w-4.5 h-4.5 text-slate-700" />
+          <Layers className="w-4.5 h-4.5 text-slate-300" />
           <span className="hidden sm:inline">
             {mode === 'rail'
               ? t.mapLayerShowBus
@@ -794,235 +879,249 @@ export function TransitMap({
         </button>
       </div>
 
-      {/* Mobile Interactive Map Preview Card (Citymapper / Google Maps style) */}
-      {(selectedStationObj || selectedBus || focusedBusStop) && (
-        <div className="md:hidden absolute bottom-3 left-3 right-16 z-[450] bg-white/98 backdrop-blur-sm border border-slate-200/90 rounded-3xl shadow-xl p-3.5 space-y-2.5">
-          {selectedStationObj ? (
-            <>
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex items-start gap-2.5 min-w-0">
-                  <span
-                    className="px-2 py-0.5 rounded-lg font-mono text-xs font-bold text-white shrink-0 mt-0.5"
-                    style={{ backgroundColor: selectedStationObj.routeColor }}
-                  >
-                    {selectedStationObj.stopId}
-                  </span>
+      {/* Mobile Interactive Transit-Style Preview Card (Color-Coded + Big GO button!) */}
+      {(selectedStationObj || selectedBus || focusedBusStop) && (() => {
+        const previewPalette = selectedBus
+          ? getTransitPalette(
+              selectedBus.color,
+              selectedBus.category === 'rapid-bus-mrtfeeder' ? 'feeder' : 'rapid-bus'
+            )
+          : selectedStationObj
+            ? getTransitPalette(selectedStationObj.routeColor, 'rail', selectedStationObj.routeId)
+            : getTransitPalette('#10b981', 'rail', 'KGL');
+
+        return (
+          <div
+            className="md:hidden absolute bottom-3 left-3 right-16 z-[450] backdrop-blur-md rounded-3xl shadow-2xl p-4 space-y-3 border"
+            style={{
+              backgroundColor: previewPalette.bandBg,
+              borderColor: previewPalette.border,
+            }}
+          >
+            {selectedStationObj ? (
+              <>
+                <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="font-display text-sm font-bold text-slate-950 truncate">
+                    <div
+                      className="text-xl font-black leading-none tracking-tight"
+                      style={{ color: previewPalette.accent }}
+                    >
+                      {selectedStationObj.stopId}
+                    </div>
+                    <div className="mt-1 text-base font-extrabold text-white truncate">
                       {selectedStationObj.displayName}
                     </div>
-                    <div className="text-[11px] text-slate-500 truncate">
+                    <div className="text-xs truncate" style={{ color: previewPalette.muted }}>
                       {selectedStationObj.category} {selectedStationObj.routeLongName}
                     </div>
                   </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={onClearMapSelection}
-                  className="w-7 h-7 inline-flex items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 shrink-0 cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() =>
-                    onOpenDirections({
-                      name: selectedStationObj.displayName,
-                      subtitle: `${selectedStationObj.category} ${selectedStationObj.routeLongName}`,
-                      badge: selectedStationObj.stopId,
-                      color: selectedStationObj.routeColor,
-                      lat: selectedStationObj.lat,
-                      lon: selectedStationObj.lon,
-                      kind: 'rail',
-                    })
-                  }
-                  className="flex-1 py-2 px-3 rounded-full bg-blue-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
-                >
-                  <Navigation className="w-3.5 h-3.5" />
-                  <span>{t.directionsBtn}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onToggleTrackStation(selectedStationObj.stopId)}
-                  className={`py-2 px-3 rounded-full text-xs font-semibold inline-flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer ${
-                    trackingId === `rail:${selectedStationObj.stopId}`
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-emerald-50 text-emerald-800'
-                  }`}
-                >
-                  {trackingId === `rail:${selectedStationObj.stopId}` ? (
-                    <BellRing className="w-3.5 h-3.5" />
-                  ) : (
-                    <Bell className="w-3.5 h-3.5" />
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onSelectStation(selectedStationObj.stopId, true)}
-                  className="py-2 px-3 rounded-full bg-slate-100 text-slate-800 text-xs font-semibold active:scale-95 transition-all cursor-pointer"
-                >
-                  {t.mapPreviewSchedule}
-                </button>
-              </div>
-            </>
-          ) : selectedBus ? (
-            <>
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex items-start gap-2.5 min-w-0">
-                  <span
-                    className="px-2 py-0.5 rounded-lg font-mono text-xs font-bold text-white shrink-0 mt-0.5"
-                    style={{ backgroundColor: selectedBus.color }}
+                  <button
+                    type="button"
+                    onClick={onClearMapSelection}
+                    className="w-7 h-7 inline-flex items-center justify-center rounded-full bg-white/10 text-white/80 hover:bg-white/20 shrink-0 cursor-pointer"
                   >
-                    {selectedBus.routeShortName}
-                  </span>
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onOpenDirections({
+                        name: selectedStationObj.displayName,
+                        subtitle: `${selectedStationObj.category} ${selectedStationObj.routeLongName}`,
+                        badge: selectedStationObj.stopId,
+                        color: selectedStationObj.routeColor,
+                        lat: selectedStationObj.lat,
+                        lon: selectedStationObj.lon,
+                        kind: 'rail',
+                      })
+                    }
+                    className="flex-1 py-2.5 px-4 rounded-2xl text-white text-sm font-black inline-flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer shadow-md"
+                    style={{ backgroundColor: previewPalette.vivid }}
+                  >
+                    <Navigation className="w-4 h-4" />
+                    <span>GO · {t.directionsBtn}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onToggleTrackStation(selectedStationObj.stopId)}
+                    className={`py-2.5 px-3 rounded-2xl text-xs font-bold inline-flex items-center justify-center active:scale-95 transition-all cursor-pointer ${
+                      trackingId === `rail:${selectedStationObj.stopId}`
+                        ? 'bg-emerald-500 text-slate-950'
+                        : 'bg-white/12 text-white'
+                    }`}
+                  >
+                    {trackingId === `rail:${selectedStationObj.stopId}` ? (
+                      <BellRing className="w-4 h-4" />
+                    ) : (
+                      <Bell className="w-4 h-4" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onSelectStation(selectedStationObj.stopId, true)}
+                    className="py-2.5 px-3.5 rounded-2xl bg-white/12 text-white text-xs font-extrabold active:scale-95 transition-all cursor-pointer"
+                  >
+                    {t.mapPreviewSchedule}
+                  </button>
+                </div>
+              </>
+            ) : selectedBus ? (
+              <>
+                <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="font-display text-sm font-bold text-slate-950 truncate">
-                      {selectedBus.headsign || selectedBus.routeLongName}
+                    <div
+                      className="text-2xl font-black leading-none tracking-tight"
+                      style={{ color: previewPalette.accent }}
+                    >
+                      {selectedBus.routeShortName}
                     </div>
-                    <div className="text-[11px] text-slate-500 font-mono truncate">
-                      {selectedBus.speedKmh} km/h · {selectedBus.licensePlate} ·{' '}
-                      {t.agoShort(selectedBus.updatedSecondsAgo)}
+                    <div className="mt-1 text-sm font-extrabold text-white truncate">
+                      → {selectedBus.headsign || selectedBus.routeLongName}
+                    </div>
+                    <div className="text-xs truncate" style={{ color: previewPalette.muted }}>
+                      {selectedBus.speedKmh} km/h · {t.agoShort(selectedBus.updatedSecondsAgo)}
                     </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={onClearMapSelection}
+                    className="w-7 h-7 inline-flex items-center justify-center rounded-full bg-white/10 text-white/80 hover:bg-white/20 shrink-0 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={onClearMapSelection}
-                  className="w-7 h-7 inline-flex items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 shrink-0 cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() =>
-                    onOpenDirections({
-                      name: `Bus ${selectedBus.routeShortName}`,
-                      subtitle: selectedBus.headsign || selectedBus.routeLongName,
-                      badge: selectedBus.routeShortName,
-                      color: selectedBus.color,
-                      lat: selectedBus.lat,
-                      lon: selectedBus.lon,
-                      kind: 'bus-live',
-                    })
-                  }
-                  className="flex-1 py-2 px-3 rounded-full bg-blue-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
-                >
-                  <Navigation className="w-3.5 h-3.5" />
-                  <span>{t.directionsBtn}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onToggleTrackBus(selectedBus)}
-                  className={`py-2 px-3 rounded-full text-xs font-semibold inline-flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer ${
-                    trackingId === `bus:${selectedBus.id}`
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-emerald-50 text-emerald-800'
-                  }`}
-                >
-                  {trackingId === `bus:${selectedBus.id}` ? (
-                    <BellRing className="w-3.5 h-3.5" />
-                  ) : (
-                    <Bell className="w-3.5 h-3.5" />
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onSelectBus(selectedBus, true)}
-                  className="py-2 px-3 rounded-full bg-slate-100 text-slate-800 text-xs font-semibold active:scale-95 transition-all cursor-pointer"
-                >
-                  {t.mapPreviewDetails}
-                </button>
-              </div>
-            </>
-          ) : focusedBusStop ? (
-            <>
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="font-display text-sm font-bold text-slate-950 truncate">
-                    {focusedBusStop.stopName}
-                  </div>
-                  <div className="text-[11px] text-slate-500 truncate">
-                    {focusedBusStop.stopCode ? `${focusedBusStop.stopCode} · ` : ''}
-                    {focusedBusStop.category === 'rapid-bus-mrtfeeder'
-                      ? 'MRT Feeder Bus Stop'
-                      : 'Rapid Bus KL Stop'}
-                  </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onOpenDirections({
+                        name: `Bus ${selectedBus.routeShortName}`,
+                        subtitle: selectedBus.headsign || selectedBus.routeLongName,
+                        badge: selectedBus.routeShortName,
+                        color: selectedBus.color,
+                        lat: selectedBus.lat,
+                        lon: selectedBus.lon,
+                        kind: 'bus-live',
+                      })
+                    }
+                    className="flex-1 py-2.5 px-4 rounded-2xl text-white text-sm font-black inline-flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer shadow-md"
+                    style={{ backgroundColor: previewPalette.vivid }}
+                  >
+                    <Navigation className="w-4 h-4" />
+                    <span>GO</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onToggleTrackBus(selectedBus)}
+                    className={`py-2.5 px-3 rounded-2xl text-xs font-bold inline-flex items-center justify-center active:scale-95 transition-all cursor-pointer ${
+                      trackingId === `bus:${selectedBus.id}`
+                        ? 'bg-emerald-500 text-slate-950'
+                        : 'bg-white/12 text-white'
+                    }`}
+                  >
+                    {trackingId === `bus:${selectedBus.id}` ? (
+                      <BellRing className="w-4 h-4" />
+                    ) : (
+                      <Bell className="w-4 h-4" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onSelectBus(selectedBus, true)}
+                    className="py-2.5 px-3.5 rounded-2xl bg-white/12 text-white text-xs font-extrabold active:scale-95 transition-all cursor-pointer"
+                  >
+                    {t.mapPreviewDetails}
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={onClearMapSelection}
-                  className="w-7 h-7 inline-flex items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 shrink-0 cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() =>
-                    onOpenDirections({
-                      name: focusedBusStop.stopName,
-                      subtitle:
-                        focusedBusStop.category === 'rapid-bus-mrtfeeder'
-                          ? 'MRT Feeder Bus Stop'
-                          : 'Rapid Bus KL Stop',
-                      badge: focusedBusStop.stopCode || 'BUS',
-                      color: '#0284C7',
-                      lat: focusedBusStop.lat,
-                      lon: focusedBusStop.lon,
-                      kind: 'bus-stop',
-                    })
-                  }
-                  className="flex-1 py-2 px-3 rounded-full bg-blue-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
-                >
-                  <Navigation className="w-3.5 h-3.5" />
-                  <span>{t.directionsBtn}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    onToggleMyBusStation({
-                      stopId: focusedBusStop.stopId,
-                      stopCode: focusedBusStop.stopCode,
-                      stopName: focusedBusStop.stopName,
-                      lat: focusedBusStop.lat,
-                      lon: focusedBusStop.lon,
-                      category: focusedBusStop.category,
-                    })
-                  }
-                  className={`py-2 px-3 rounded-full text-xs font-semibold inline-flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer ${
-                    matchesMyBusStationStrict(focusedBusStop, myBusStation)
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-emerald-50 text-emerald-800'
-                  }`}
-                >
-                  {matchesMyBusStationStrict(focusedBusStop, myBusStation) ? (
-                    <BookmarkCheck className="w-3.5 h-3.5" />
-                  ) : (
-                    <BookmarkPlus className="w-3.5 h-3.5" />
-                  )}
-                  <span>{t.myStationBadge}</span>
-                </button>
-              </div>
-            </>
-          ) : null}
-        </div>
-      )}
+              </>
+            ) : focusedBusStop ? (
+              <>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-base font-extrabold text-white truncate">
+                      {focusedBusStop.stopName}
+                    </div>
+                    <div className="text-xs truncate" style={{ color: previewPalette.muted }}>
+                      {focusedBusStop.stopCode ? `${focusedBusStop.stopCode} · ` : ''}
+                      {focusedBusStop.category === 'rapid-bus-mrtfeeder'
+                        ? 'MRT Feeder Bus Stop'
+                        : 'Rapid Bus KL Stop'}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onClearMapSelection}
+                    className="w-7 h-7 inline-flex items-center justify-center rounded-full bg-white/10 text-white/80 hover:bg-white/20 shrink-0 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onOpenDirections({
+                        name: focusedBusStop.stopName,
+                        subtitle:
+                          focusedBusStop.category === 'rapid-bus-mrtfeeder'
+                            ? 'MRT Feeder Bus Stop'
+                            : 'Rapid Bus KL Stop',
+                        badge: focusedBusStop.stopCode || 'BUS',
+                        color: '#0284C7',
+                        lat: focusedBusStop.lat,
+                        lon: focusedBusStop.lon,
+                        kind: 'bus-stop',
+                      })
+                    }
+                    className="flex-1 py-2.5 px-4 rounded-2xl bg-emerald-500 text-slate-950 text-sm font-black inline-flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <Navigation className="w-4 h-4" />
+                    <span>GO</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onToggleMyBusStation({
+                        stopId: focusedBusStop.stopId,
+                        stopCode: focusedBusStop.stopCode,
+                        stopName: focusedBusStop.stopName,
+                        lat: focusedBusStop.lat,
+                        lon: focusedBusStop.lon,
+                        category: focusedBusStop.category,
+                      })
+                    }
+                    className={`py-2.5 px-3.5 rounded-2xl text-xs font-extrabold inline-flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer ${
+                      matchesMyBusStationStrict(focusedBusStop, myBusStation)
+                        ? 'bg-white text-slate-950'
+                        : 'bg-white/14 text-white'
+                    }`}
+                  >
+                    {matchesMyBusStationStrict(focusedBusStop, myBusStation) ? (
+                      <BookmarkCheck className="w-3.5 h-3.5" />
+                    ) : (
+                      <BookmarkPlus className="w-3.5 h-3.5" />
+                    )}
+                    <span>{t.myStationBadge}</span>
+                  </button>
+                </div>
+              </>
+            ) : null}
+          </div>
+        );
+      })()}
 
       {/* Compact Rapid KL Line Legend (bottom-left on desktop) */}
       {(mode === 'rail' || mode === 'all') && lines.length > 0 && (
-        <div className="hidden lg:flex absolute bottom-4 left-4 z-[400] bg-white/95 backdrop-blur-xs border border-slate-200/90 rounded-2xl px-3.5 py-2 shadow-md items-center gap-3 text-[11px] text-slate-600">
+        <div className="hidden lg:flex absolute bottom-4 left-4 z-[400] bg-[#111622]/90 backdrop-blur-md border border-white/12 rounded-2xl px-3.5 py-2 shadow-lg items-center gap-3 text-[11px] text-slate-300">
           {lines.slice(0, 7).map((line) => (
             <div key={line.routeId} className="flex items-center gap-1.5 whitespace-nowrap">
               <span
                 className="w-2.5 h-1 rounded-full shrink-0"
                 style={{ backgroundColor: line.color }}
               />
-              <span className="font-mono font-semibold text-slate-800">{line.shortName}</span>
+              <span className="font-bold text-white">{line.shortName}</span>
             </div>
           ))}
         </div>

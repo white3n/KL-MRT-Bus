@@ -2,18 +2,19 @@ import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 import {
   ArrowRight,
+  ArrowRightCircle,
   Bus,
   Home,
   LocateFixed,
   Map as MapIcon,
   Navigation,
-  Radio,
   RotateCcw,
   Route,
   Search,
   Settings2,
   Star,
   TrainFront,
+  Wifi,
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -51,6 +52,7 @@ import type {
 } from './types/transit';
 import { interpolateLiveVehicles } from './utils/busApproach';
 import type { DirectionsTarget } from './utils/directionsHelper';
+import { getRailLineNumber, getTransitPalette } from './utils/transitTheme';
 import { formatCountdown, normalizeSearch, POPULAR_KL_HUBS } from './utils/transitHelpers';
 
 const REALTIME_NETWORK_POLL_MS = 2500;
@@ -893,7 +895,7 @@ export default function App() {
   };
 
   return (
-    <div className="h-dvh w-screen flex flex-col bg-white overflow-hidden safe-area-shell">
+    <div className="h-dvh w-screen flex flex-col bg-[#0b0f17] text-white overflow-hidden safe-area-shell">
       <TopBar
         mode={mode}
         onModeChange={handleModeChange}
@@ -939,18 +941,18 @@ export default function App() {
 
       {/* Main Split Workspace */}
       <div className="flex-1 flex min-h-0 relative">
-        {/* Left Interactive Transit Panel */}
+        {/* Left Interactive Transit Panel (Sleek Transit Dark Theme) */}
         <aside
           className={`${
             mobileView === 'list' ? 'flex' : 'hidden'
-          } md:flex flex-col w-full md:w-[420px] lg:w-[440px] shrink-0 bg-white border-r border-slate-200/90 min-h-0 z-20`}
+          } md:flex flex-col w-full md:w-[420px] lg:w-[440px] shrink-0 bg-[#0b0f17] border-r border-white/10 min-h-0 z-20`}
         >
-          {/* Separate Search Bars for Rail vs Bus + GPS Nearby Chip */}
+          {/* Iconic Transit App Green "Where to?" Bar + Docked Home My-Station Button */}
           {!showNearbyView && (
-            <div className="p-3.5 md:p-4 border-b border-slate-200/80 shrink-0 bg-white space-y-2.5">
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1 min-w-0">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <div className="px-3.5 py-3 border-b border-white/10 shrink-0 bg-[#0b0f17] space-y-2.5">
+              <div className="flex items-stretch rounded-2xl bg-[#166534] shadow-md shadow-black/30 overflow-hidden border border-emerald-400/20">
+                <div className="relative flex-1 min-w-0 flex items-center">
+                  <Search className="w-4.5 h-4.5 text-emerald-100/90 absolute left-3.5 pointer-events-none" />
                   <input
                     type="text"
                     value={showingBusPanel ? busSearchQuery : railSearchQuery}
@@ -966,7 +968,7 @@ export default function App() {
                     placeholder={
                       showingBusPanel ? t.searchBusPlaceholder : t.searchRailPlaceholder
                     }
-                    className="w-full pl-10 pr-8 py-2.5 text-sm bg-slate-100/90 border border-slate-200/80 rounded-full text-slate-900 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-600/15 transition-all"
+                    className="w-full pl-10 pr-8 py-3 text-sm font-extrabold bg-transparent text-white placeholder:text-emerald-100/80 focus:outline-none"
                   />
                   {(showingBusPanel ? busSearchQuery : railSearchQuery) && (
                     <button
@@ -975,57 +977,72 @@ export default function App() {
                       onClick={() =>
                         showingBusPanel ? setBusSearchQuery('') : setRailSearchQuery('')
                       }
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 rounded-full cursor-pointer"
+                      className="absolute right-2 p-1 text-emerald-100 hover:text-white rounded-full cursor-pointer"
                     >
                       <X className="w-4 h-4" />
                     </button>
                   )}
                 </div>
 
+                {/* Right-docked Trip Planner & Home My-Station Icon Buttons (Transit Screenshot 8/9!) */}
                 <button
                   type="button"
-                  onClick={requestUserLocation}
-                  disabled={locating}
-                  title={t.nearMeTitle}
-                  className="hidden md:inline-flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold rounded-full border shadow-2xs active:scale-95 transition-all whitespace-nowrap shrink-0 cursor-pointer bg-blue-50 border-blue-200/80 text-blue-700 hover:bg-blue-100"
+                  onClick={() => {
+                    setTripPlannerTab(showingBusPanel ? 'bus' : 'rail');
+                    setTripPlannerOpen(true);
+                  }}
+                  aria-label={t.tripPlanner}
+                  title={t.tripPlanner}
+                  className="px-3 flex items-center justify-center border-l border-emerald-400/25 text-emerald-50 hover:bg-white/10 active:bg-white/15 transition-colors cursor-pointer shrink-0"
                 >
-                  <LocateFixed className={`w-4 h-4 ${locating ? 'animate-spin' : ''}`} />
-                  <span>{locating ? t.locatingShort : t.nearMe}</span>
+                  <Route className="w-4.5 h-4.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMyStationSetupMode(showingBusPanel ? 'bus' : 'rail')}
+                  aria-label={showingBusPanel ? t.myBusStationLabel : t.myRailStationLabel}
+                  title={showingBusPanel ? t.myBusStationLabel : t.myRailStationLabel}
+                  className="px-3.5 flex items-center justify-center border-l border-emerald-400/25 text-emerald-50 hover:bg-white/10 active:bg-white/15 transition-colors cursor-pointer shrink-0"
+                >
+                  <Home className="w-4.5 h-4.5" />
                 </button>
               </div>
 
-              {/* Rail Line Material Filter Chips when viewing Rail station list */}
+              {/* Rail Line Circular Color Filter Chips when viewing Rail list */}
               {!showingBusPanel && !selectedStationId && railData && (
                 <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
                   <button
                     type="button"
                     onClick={() => setSelectedLineId('all')}
-                    className={`px-3 py-1.5 text-xs font-semibold rounded-full whitespace-nowrap shrink-0 active:scale-95 transition-all cursor-pointer ${
+                    className={`px-3 py-1.5 text-xs font-extrabold rounded-full whitespace-nowrap shrink-0 active:scale-95 transition-all cursor-pointer ${
                       selectedLineId === 'all'
-                        ? 'bg-blue-600 text-white shadow-xs'
-                        : 'bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
+                        ? 'bg-emerald-500 text-slate-950 shadow-xs'
+                        : 'bg-white/10 text-slate-300 hover:text-white hover:bg-white/16'
                     }`}
                   >
-                    {t.allLines} ({railData.lines.length})
+                    {t.allLines}
                   </button>
                   {railData.lines.map((line) => {
                     const active = selectedLineId === line.routeId;
+                    const lineNum = getRailLineNumber(line.routeId, line.shortName);
                     return (
                       <button
                         key={line.routeId}
                         type="button"
                         onClick={() => setSelectedLineId(line.routeId)}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full whitespace-nowrap shrink-0 active:scale-95 transition-all cursor-pointer ${
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-extrabold rounded-full whitespace-nowrap shrink-0 active:scale-95 transition-all cursor-pointer ${
                           active
-                            ? 'bg-blue-600 text-white shadow-xs'
-                            : 'bg-white border border-slate-200 text-slate-700 hover:border-slate-300'
+                            ? 'bg-white text-slate-950 shadow-xs'
+                            : 'bg-white/10 text-slate-200 hover:bg-white/16'
                         }`}
                       >
                         <span
-                          className="w-2.5 h-2.5 rounded-full shrink-0 ring-1 ring-black/10"
+                          className="w-4.5 h-4.5 rounded-full text-[10px] font-black text-white flex items-center justify-center shrink-0"
                           style={{ backgroundColor: line.color }}
-                        />
-                        <span className="font-mono font-bold">{line.shortName}</span>
+                        >
+                          {lineNum}
+                        </span>
+                        <span>{line.shortName}</span>
                       </button>
                     );
                   })}
@@ -1034,12 +1051,12 @@ export default function App() {
 
               {/* Quick mode switch note when in 'all' mode */}
               {mode === 'all' && !selectedStationId && !selectedBus && (
-                <div className="flex items-center justify-between text-xs text-slate-500 pt-0.5">
+                <div className="flex items-center justify-between text-xs text-slate-400 pt-0.5">
                   <span>{t.showingAllSummary(busData?.counts.total ?? 0)}</span>
                   <button
                     type="button"
                     onClick={() => setMode('bus')}
-                    className="font-semibold text-blue-600 hover:text-blue-800 cursor-pointer whitespace-nowrap"
+                    className="font-extrabold text-emerald-400 hover:text-emerald-300 cursor-pointer whitespace-nowrap"
                   >
                     {t.viewBusList} →
                   </button>
@@ -1134,27 +1151,20 @@ export default function App() {
                 }
               />
             ) : (
-              <div className="p-4 space-y-5 pb-6">
+              <div className="pb-6 bg-[#0b0f17] min-h-full">
                 {railLoading && !railData ? (
-                  <div className="space-y-3 animate-pulse">
-                    <div className="h-4 w-36 bg-slate-200 rounded-full" />
-                    <div className="grid grid-cols-2 gap-2.5">
-                      {[1, 2, 3, 4, 5, 6].map((n) => (
-                        <div key={n} className="h-16 bg-slate-100 rounded-2xl" />
-                      ))}
-                    </div>
-                    <div className="h-4 w-28 bg-slate-200 rounded-full mt-4" />
+                  <div className="p-4 space-y-3 animate-pulse">
                     {[1, 2, 3, 4].map((n) => (
-                      <div key={n} className="h-14 bg-slate-100 rounded-2xl" />
+                      <div key={n} className="h-20 bg-white/8 rounded-2xl" />
                     ))}
                   </div>
                 ) : railError && !railData ? (
-                  <div className="p-5 border border-red-200 bg-red-50 rounded-2xl space-y-3">
-                    <p className="text-sm font-medium text-red-900">{railError}</p>
+                  <div className="m-4 p-5 border border-red-500/30 bg-red-950/50 rounded-3xl space-y-3">
+                    <p className="text-sm font-bold text-red-100">{railError}</p>
                     <button
                       type="button"
                       onClick={fetchRailNetwork}
-                      className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold bg-blue-600 text-white rounded-full hover:bg-blue-700 shadow-xs active:scale-95 transition-all cursor-pointer"
+                      className="inline-flex items-center gap-2 px-4 py-2 text-xs font-black bg-emerald-500 text-slate-950 rounded-full active:scale-95 transition-all cursor-pointer"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
                       <span>{t.reloadData}</span>
@@ -1162,20 +1172,86 @@ export default function App() {
                   </div>
                 ) : (
                   <>
-                    {/* Dedicated My Rail Station Live Card (instant countdown right on app open!) */}
+                    {/* TRANSIT APP FULL-BLEED COLOR-CODED HOME BANDS (My Rail + My Bus!) */}
                     {!railSearchQuery && selectedLineId === 'all' && (
-                      <section className="space-y-2.5">
+                      <section className="divide-y divide-black/35 border-b border-white/10">
+                        {/* My Bus Station Top 2 Live Bands (Crimson / Navy like Transit Screenshot 8 & 9!) */}
+                        {myBusStation &&
+                          myBusArrivals.slice(0, 2).map((arr) => {
+                            const pal = getTransitPalette(
+                              arr.color,
+                              arr.bus.category === 'rapid-bus-mrtfeeder' ? 'feeder' : 'rapid-bus'
+                            );
+                            return (
+                              <button
+                                key={arr.bus.id}
+                                type="button"
+                                onClick={() => {
+                                  setMode('bus');
+                                  handleSelectBus(arr.bus, true);
+                                }}
+                                className="w-full px-4 py-4 flex items-center justify-between gap-3 text-left active:brightness-110 transition-all cursor-pointer"
+                                style={{ backgroundColor: pal.bandBg }}
+                              >
+                                <div className="min-w-0 flex-1 space-y-0.5">
+                                  <div
+                                    className="font-display text-3xl font-black leading-none tracking-tight"
+                                    style={{ color: pal.accent }}
+                                  >
+                                    {arr.routeShortName}
+                                  </div>
+                                  <div
+                                    className="flex items-center gap-1.5 text-sm font-extrabold truncate pt-0.5"
+                                    style={{ color: pal.accent }}
+                                  >
+                                    <ArrowRightCircle className="w-3.5 h-3.5 shrink-0" />
+                                    <span className="truncate">
+                                      {arr.headsign || arr.routeLongName}
+                                    </span>
+                                  </div>
+                                  <div
+                                    className="text-xs font-bold truncate"
+                                    style={{ color: pal.muted }}
+                                  >
+                                    {myBusStation.stopName} · {t.stopsRemaining(arr.stopsAway)}
+                                  </div>
+                                </div>
+                                <div className="text-right shrink-0 pl-2">
+                                  <div className="flex items-start justify-end gap-0.5">
+                                    <span
+                                      className="font-display text-4xl font-black leading-none tabular-nums"
+                                      style={{ color: pal.accent }}
+                                    >
+                                      {arr.etaMinutes}
+                                    </span>
+                                    <Wifi
+                                      className="w-3.5 h-3.5 rotate-45 -mt-0.5 animate-pulse"
+                                      style={{ color: pal.accent }}
+                                    />
+                                  </div>
+                                  <div
+                                    className="text-[11px] font-bold mt-0.5"
+                                    style={{ color: pal.muted }}
+                                  >
+                                    {t.minutesWord}
+                                  </div>
+                                </div>
+                              </button>
+                            );
+                          })}
+
+                        {/* My Rail Station Full-Bleed Line-Colored Bands (Emerald / Orange like Screenshot 9!) */}
                         {!myRailStation ? (
-                          <div className="p-3.5 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50/70 border border-blue-200/80 flex items-center justify-between gap-3">
+                          <div className="px-4 py-3.5 bg-[#101826] flex items-center justify-between gap-3">
                             <div className="flex items-center gap-2.5 min-w-0">
-                              <span className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                                <Home className="w-4.5 h-4.5" />
+                              <span className="w-9 h-9 rounded-2xl bg-emerald-500 text-slate-950 flex items-center justify-center shrink-0">
+                                <Home className="w-4.5 h-4.5 stroke-[2.5]" />
                               </span>
                               <div className="min-w-0">
-                                <div className="font-display text-sm font-bold text-slate-950 truncate">
+                                <div className="text-sm font-black text-white truncate">
                                   {t.myRailStationLabel}
                                 </div>
-                                <div className="text-xs text-slate-600 line-clamp-1">
+                                <div className="text-xs text-slate-400 truncate">
                                   {t.setupMyRailSub}
                                 </div>
                               </div>
@@ -1183,228 +1259,136 @@ export default function App() {
                             <button
                               type="button"
                               onClick={() => setMyStationSetupMode('rail')}
-                              className="px-3.5 py-2 rounded-full bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-semibold shadow-xs shrink-0 transition-all cursor-pointer"
+                              className="px-3.5 py-2 rounded-full bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 text-xs font-black shrink-0 cursor-pointer"
                             >
                               {t.setupBtn}
                             </button>
                           </div>
-                        ) : (
-                          <div className="p-3.5 rounded-2xl bg-gradient-to-br from-blue-50/90 to-white border border-blue-200/90 shadow-2xs space-y-2.5">
-                            <div className="flex items-start justify-between gap-2">
+                        ) : myRailDepartures?.directions?.length ? (
+                          myRailDepartures.directions.slice(0, 2).map((dir) => {
+                            const next = dir.upcoming[0];
+                            if (!next) return null;
+                            const pal = getTransitPalette(
+                              myRailStation.routeColor,
+                              'rail',
+                              myRailStation.routeId
+                            );
+                            const lineNum = getRailLineNumber(
+                              myRailStation.routeId,
+                              myRailStation.routeShortName
+                            );
+                            const isTimetable = myRailDepartures.scheduleMode === 'timetable';
+
+                            return (
                               <button
+                                key={dir.tripId}
                                 type="button"
                                 onClick={() => handleSelectStation(myRailStation.stopId, true)}
-                                className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer"
+                                className="w-full px-4 py-4 flex items-center justify-between gap-3 text-left active:brightness-110 transition-all cursor-pointer"
+                                style={{ backgroundColor: pal.bandBg }}
                               >
-                                <span
-                                  className="px-2 py-1 rounded-xl font-mono text-xs font-bold text-white shrink-0 shadow-2xs"
-                                  style={{ backgroundColor: myRailStation.routeColor }}
-                                >
-                                  {myRailStation.stopId}
-                                </span>
-                                <div className="min-w-0">
-                                  <div className="text-[10px] font-bold uppercase tracking-wide text-blue-700">
-                                    {t.myRailStationLabel}
-                                  </div>
-                                  <div className="font-display text-sm font-bold text-slate-950 truncate">
-                                    {myRailStation.displayName}
-                                  </div>
-                                </div>
-                              </button>
-
-                              <div className="flex items-center gap-1 shrink-0">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setDirectionsTarget({
-                                      name: myRailStation.displayName,
-                                      subtitle: `${myRailStation.category} ${myRailStation.routeLongName}`,
-                                      badge: myRailStation.stopId,
-                                      color: myRailStation.routeColor,
-                                      lat: myRailStation.lat,
-                                      lon: myRailStation.lon,
-                                      kind: 'rail',
-                                    })
-                                  }
-                                  aria-label={t.directionsBtn}
-                                  title={t.directionsBtn}
-                                  className="w-8 h-8 inline-flex items-center justify-center rounded-full bg-white border border-blue-200 text-blue-600 hover:bg-blue-50 active:scale-95 cursor-pointer"
-                                >
-                                  <Navigation className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setMyStationSetupMode('rail')}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-white border border-blue-200 hover:bg-blue-50 text-blue-800 text-[11px] font-semibold active:scale-95 cursor-pointer"
-                                >
-                                  <Settings2 className="w-3 h-3" />
-                                  <span>{t.changeStationBtn}</span>
-                                </button>
-                              </div>
-                            </div>
-
-                            {myRailDepartures?.directions?.length ? (
-                              <div className="grid grid-cols-1 gap-1.5">
-                                {myRailDepartures.directions.slice(0, 2).map((dir) => {
-                                  const next = dir.upcoming[0];
-                                  if (!next) return null;
-                                  const isTimetable = myRailDepartures.scheduleMode === 'timetable';
-                                  return (
-                                    <button
-                                      key={dir.tripId}
-                                      type="button"
-                                      onClick={() =>
-                                        handleSelectStation(myRailStation.stopId, true)
-                                      }
-                                      className="px-3 py-2 rounded-xl bg-white border border-blue-100 flex items-center justify-between gap-2 text-left hover:bg-blue-50/40 cursor-pointer"
+                                <div className="min-w-0 flex-1 space-y-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <span
+                                      className="w-7 h-7 rounded-full flex items-center justify-center text-slate-950 shrink-0"
+                                      style={{ backgroundColor: pal.accent }}
                                     >
-                                      <div className="min-w-0">
-                                        <div className="text-[11px] text-slate-400">
-                                          {t.towards}
-                                        </div>
-                                        <div className="text-xs font-bold text-slate-900 truncate">
-                                          {dir.destinationName}
-                                        </div>
-                                      </div>
-                                      <div className="text-right shrink-0">
-                                        {isTimetable ? (
-                                          <>
-                                            <div
-                                              className={`font-mono text-sm font-extrabold tabular-nums ${
-                                                next.isTomorrow
-                                                  ? 'text-amber-700'
-                                                  : next.minutesAway <= 1
-                                                    ? 'text-emerald-600'
-                                                    : 'text-slate-950'
-                                              }`}
-                                            >
-                                              {formatCountdown(next.minutesAway, next.isTomorrow, lang)}
-                                            </div>
-                                            <div className="font-mono text-[10px] text-slate-400 tabular-nums">
-                                              {next.arrivalTime}
-                                            </div>
-                                          </>
-                                        ) : next.isTomorrow ? (
-                                          <>
-                                            <div className="font-display text-xs font-bold text-amber-700">
-                                              {t.serviceEnded}
-                                            </div>
-                                            <div className="font-mono text-[10px] text-slate-400 tabular-nums">
-                                              {t.firstTrainAt(dir.firstTrain)}
-                                            </div>
-                                          </>
-                                        ) : (
-                                          <>
-                                            <div
-                                              className={`font-display text-xs font-extrabold tabular-nums ${
-                                                dir.isPeakNow ? 'text-emerald-700' : 'text-blue-700'
-                                              }`}
-                                            >
-                                              {t.everyXMin(dir.currentHeadwayMinutes)}
-                                              {dir.isPeakNow ? ` · ${t.peakHours}` : ''}
-                                            </div>
-                                            <div className="font-mono text-[10px] text-slate-400 tabular-nums">
-                                              {dir.firstTrain} – {dir.lastTrain}
-                                            </div>
-                                          </>
-                                        )}
-                                      </div>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            ) : null}
-                          </div>
-                        )}
-
-                        {/* Compact Live Bus Preview Strip right on App Open if My Bus Station is configured */}
-                        {myBusStation && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setMode('bus');
-                              setSelectedStationId(null);
-                              setMobileView('list');
-                            }}
-                            className="w-full px-3.5 py-2.5 rounded-2xl bg-emerald-50/90 hover:bg-emerald-50 border border-emerald-200/90 flex items-center justify-between gap-2.5 text-left active:scale-[0.99] transition-all cursor-pointer"
-                          >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <span className="w-7.5 h-7.5 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
-                                <Bus className="w-4 h-4" />
-                              </span>
-                              <div className="min-w-0">
-                                <div className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 truncate">
-                                  {t.myBusStationLabel} · {myBusStation.stopName}
-                                </div>
-                                <div className="text-xs font-bold text-slate-900 truncate">
-                                  {myBusArrivals[0] ? (
-                                    <span className="inline-flex items-center gap-1.5">
-                                      <Radio className="w-3 h-3 text-emerald-600 animate-pulse shrink-0" />
-                                      <span>
-                                        Bus {myBusArrivals[0].routeShortName} ·{' '}
-                                        {t.stopsRemaining(myBusArrivals[0].stopsAway)}
-                                      </span>
+                                      <TrainFront className="w-4 h-4 stroke-[2.5]" />
                                     </span>
+                                    <span
+                                      className="w-7 h-7 rounded-full flex items-center justify-center text-slate-950 text-xs font-black shrink-0"
+                                      style={{ backgroundColor: pal.accent }}
+                                    >
+                                      {lineNum}
+                                    </span>
+                                    <span
+                                      className="px-2.5 py-0.5 rounded-full text-slate-950 text-xs font-black truncate"
+                                      style={{ backgroundColor: pal.accent }}
+                                    >
+                                      {myRailStation.routeLongName.replace(/\s*Line$/i, '')}
+                                    </span>
+                                  </div>
+                                  <div
+                                    className="flex items-center gap-1.5 text-sm font-extrabold truncate"
+                                    style={{ color: pal.accent }}
+                                  >
+                                    <ArrowRightCircle className="w-3.5 h-3.5 shrink-0" />
+                                    <span className="truncate">{dir.destinationName}</span>
+                                  </div>
+                                  <div
+                                    className="text-xs font-bold truncate"
+                                    style={{ color: pal.muted }}
+                                  >
+                                    {myRailStation.displayName} · {dir.firstTrain}–{dir.lastTrain}
+                                  </div>
+                                </div>
+
+                                <div className="text-right shrink-0 pl-2">
+                                  {next.isTomorrow ? (
+                                    <>
+                                      <div className="text-xs font-black text-amber-300">
+                                        {t.serviceEnded}
+                                      </div>
+                                      <div className="text-[11px] font-bold" style={{ color: pal.muted }}>
+                                        {dir.firstTrain}
+                                      </div>
+                                    </>
                                   ) : (
-                                    t.myBusArrivalsTitle
+                                    <>
+                                      <div
+                                        className="font-display text-4xl font-black leading-none tabular-nums"
+                                        style={{ color: pal.accent }}
+                                      >
+                                        {isTimetable ? next.minutesAway : dir.currentHeadwayMinutes}
+                                      </div>
+                                      <div
+                                        className="text-[11px] font-bold mt-0.5"
+                                        style={{ color: pal.muted }}
+                                      >
+                                        {isTimetable
+                                          ? t.minutesWord
+                                          : dir.isPeakNow
+                                            ? t.peakHours
+                                            : t.minutesWord + '/chuyến'}
+                                      </div>
+                                    </>
                                   )}
                                 </div>
+                              </button>
+                            );
+                          })
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleSelectStation(myRailStation.stopId, true)}
+                            className="w-full px-4 py-3.5 bg-[#052919] flex items-center justify-between gap-2 text-left cursor-pointer"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold text-emerald-300">
+                                {t.myRailStationLabel}
+                              </div>
+                              <div className="text-lg font-black text-white truncate">
+                                {myRailStation.displayName}
                               </div>
                             </div>
-                            <span className="font-mono text-sm font-extrabold text-emerald-700 tabular-nums shrink-0">
-                              {myBusArrivals[0] ? `~${myBusArrivals[0].etaMinutes}m` : '→'}
-                            </span>
+                            <Settings2
+                              className="w-4 h-4 text-emerald-300 shrink-0"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setMyStationSetupMode('rail');
+                              }}
+                            />
                           </button>
                         )}
                       </section>
                     )}
 
-                    {/* Quick Action Entry Cards (Trip Planner + Nearest Stop Directions) */}
-                    {!railSearchQuery && selectedLineId === 'all' && (
-                      <div className="grid grid-cols-2 gap-2.5">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setTripPlannerTab('rail');
-                            setTripPlannerOpen(true);
-                          }}
-                          className="p-3.5 rounded-2xl bg-gradient-to-br from-blue-600 to-blue-700 text-white text-left shadow-sm shadow-blue-600/20 active:scale-[0.98] transition-all cursor-pointer space-y-1.5"
-                        >
-                          <span className="w-8 h-8 rounded-xl bg-white/15 flex items-center justify-center">
-                            <Route className="w-4 h-4" />
-                          </span>
-                          <div className="font-display text-sm font-bold leading-tight">
-                            {t.tripPlanner}
-                          </div>
-                          <div className="text-[11px] text-blue-100 truncate">
-                            MRT · LRT · Monorail
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleMobileNavSelect('nearby')}
-                          className="p-3.5 rounded-2xl bg-slate-900 text-white text-left shadow-sm active:scale-[0.98] transition-all cursor-pointer space-y-1.5"
-                        >
-                          <span className="w-8 h-8 rounded-xl bg-white/15 flex items-center justify-center">
-                            <Navigation className="w-4 h-4 text-sky-300" />
-                          </span>
-                          <div className="font-display text-sm font-bold leading-tight">
-                            {t.navNearby}
-                          </div>
-                          <div className="text-[11px] text-slate-300 truncate">
-                            GPS · Google Maps
-                          </div>
-                        </button>
-                      </div>
-                    )}
-
                     {/* Saved / Favorite Stations */}
                     {!railSearchQuery && selectedLineId === 'all' && favoriteStations.length > 0 && (
-                      <section className="space-y-2">
-                        <div className="flex items-center gap-1.5 px-0.5">
-                          <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />
-                          <h2 className="font-display text-sm font-bold text-slate-900">
+                      <section className="px-4 pt-4 space-y-2">
+                        <div className="flex items-center gap-1.5">
+                          <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                          <h2 className="font-display text-xs font-black uppercase tracking-wider text-slate-400">
                             {t.savedStations}
                           </h2>
                         </div>
@@ -1414,15 +1398,13 @@ export default function App() {
                               key={st.stopId}
                               type="button"
                               onClick={() => handleSelectStation(st.stopId, true)}
-                              className="shrink-0 px-3.5 py-2.5 rounded-2xl bg-amber-50/70 hover:bg-amber-50 border border-amber-200/80 text-left active:scale-95 transition-all cursor-pointer flex items-center gap-2.5"
+                              className="shrink-0 px-3.5 py-2 rounded-2xl bg-white/8 hover:bg-white/14 border border-white/10 text-left active:scale-95 transition-all cursor-pointer flex items-center gap-2"
                             >
                               <span
-                                className="px-1.5 py-0.5 rounded-md font-mono text-[11px] font-bold text-white"
+                                className="w-2.5 h-2.5 rounded-full shrink-0"
                                 style={{ backgroundColor: st.routeColor }}
-                              >
-                                {st.stopId}
-                              </span>
-                              <span className="text-xs font-bold text-slate-900 whitespace-nowrap">
+                              />
+                              <span className="text-xs font-extrabold text-white whitespace-nowrap">
                                 {st.displayName}
                               </span>
                             </button>
@@ -1431,39 +1413,55 @@ export default function App() {
                       </section>
                     )}
 
-                    {/* Popular KL Hubs for 1-click departure check */}
+                    {/* Popular KL Hubs (Compact Cute Color-Tinted Tiles!) */}
                     {!railSearchQuery && selectedLineId === 'all' && (
-                      <section className="space-y-2.5">
-                        <div className="flex items-baseline justify-between px-0.5">
-                          <h2 className="font-display text-sm font-bold text-slate-900">
-                            {t.popularHubs}
-                          </h2>
-                          <span className="text-xs text-slate-400">{t.tapForSchedule}</span>
-                        </div>
+                      <section className="px-4 pt-4 space-y-2.5">
+                        <h2 className="font-display text-xs font-black uppercase tracking-wider text-slate-400">
+                          {t.popularHubs}
+                        </h2>
 
-                        <div className="grid grid-cols-2 gap-2.5">
+                        <div className="grid grid-cols-2 gap-2">
                           {POPULAR_KL_HUBS.map((hub) => {
                             const match = railData?.stations.find((s) => s.stopId === hub.stopId);
+                            const pal = getTransitPalette(
+                              match?.routeColor || '#047857',
+                              'rail',
+                              match?.routeId
+                            );
+                            const lineNum = match
+                              ? getRailLineNumber(match.routeId, match.routeShortName)
+                              : '9';
                             return (
                               <button
                                 key={hub.stopId}
                                 type="button"
                                 onClick={() => handleSelectStation(hub.stopId, true)}
-                                className="p-3.5 text-left bg-white hover:bg-slate-50 active:scale-[0.98] border border-slate-200/90 hover:border-blue-300 rounded-2xl shadow-2xs transition-all cursor-pointer space-y-1"
+                                className="p-3.5 text-left rounded-2xl active:scale-[0.98] transition-all cursor-pointer space-y-1 border"
+                                style={{
+                                  backgroundColor: pal.bandBg,
+                                  borderColor: pal.border,
+                                }}
                               >
                                 <div className="flex items-center gap-1.5">
                                   <span
-                                    className="w-2.5 h-2.5 rounded-full shrink-0"
-                                    style={{ backgroundColor: match?.routeColor || '#047857' }}
-                                  />
-                                  <span className="font-mono text-[11px] font-bold text-slate-500">
+                                    className="w-5 h-5 rounded-full text-[10px] font-black text-slate-950 flex items-center justify-center shrink-0"
+                                    style={{ backgroundColor: pal.accent }}
+                                  >
+                                    {lineNum}
+                                  </span>
+                                  <span
+                                    className="font-mono text-[11px] font-extrabold"
+                                    style={{ color: pal.accent }}
+                                  >
                                     {hub.stopId}
                                   </span>
                                 </div>
-                                <div className="font-display text-sm font-bold text-slate-900 truncate">
+                                <div className="font-display text-base font-black text-white truncate">
                                   {hub.label}
                                 </div>
-                                <div className="text-[11px] text-slate-500 truncate">{hub.sub}</div>
+                                <div className="text-[11px] font-bold truncate" style={{ color: pal.muted }}>
+                                  {hub.sub}
+                                </div>
                               </button>
                             );
                           })}
@@ -1471,82 +1469,68 @@ export default function App() {
                       </section>
                     )}
 
-                    {/* Full Searchable Station Directory */}
-                    <section className="space-y-2.5">
-                      <div className="flex items-baseline justify-between px-0.5">
-                        <h2 className="font-display text-sm font-bold text-slate-900">
+                    {/* Minimalist Dark Station Directory */}
+                    <section className="px-4 pt-5 space-y-2.5">
+                      <div className="flex items-baseline justify-between">
+                        <h2 className="font-display text-xs font-black uppercase tracking-wider text-slate-400">
                           {selectedLineId === 'all'
                             ? t.allRailStations
                             : railData?.lines.find((l) => l.routeId === selectedLineId)
                                 ?.longName || t.allRailStations}
                         </h2>
-                        <span className="font-mono text-xs text-slate-500 tabular-nums">
+                        <span className="font-mono text-[11px] font-bold text-slate-500 tabular-nums">
                           {t.stationsCount(filteredStations.length)}
                         </span>
                       </div>
 
                       {filteredStations.length === 0 ? (
-                        <div className="p-6 text-center border border-slate-200 rounded-2xl space-y-2.5 bg-white">
-                          <p className="text-sm font-semibold text-slate-800">
-                            {t.noStationsMatch}
-                          </p>
+                        <div className="p-6 text-center rounded-3xl bg-white/6 space-y-2.5">
+                          <p className="text-sm font-black text-white">{t.noStationsMatch}</p>
                           <button
                             type="button"
                             onClick={() => {
                               setRailSearchQuery('');
                               setSelectedLineId('all');
                             }}
-                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-full cursor-pointer"
+                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-black bg-emerald-500 text-slate-950 rounded-full cursor-pointer"
                           >
                             {t.clearFilters}
                           </button>
                         </div>
                       ) : (
-                        <div className="divide-y divide-slate-100 border border-slate-200/90 rounded-2xl overflow-hidden bg-white shadow-2xs">
-                          {filteredStations.map((st) => (
-                            <button
-                              key={st.stopId}
-                              type="button"
-                              onClick={() => handleSelectStation(st.stopId, true)}
-                              className="w-full px-3.5 py-3 flex items-center justify-between gap-3 hover:bg-slate-50 active:bg-slate-100/70 text-left transition-colors cursor-pointer"
-                            >
-                              <div className="flex items-center gap-3 min-w-0">
-                                <span
-                                  className="shrink-0 min-w-[46px] text-center px-1.5 py-0.5 rounded-lg font-mono text-[11px] font-bold text-white tabular-nums shadow-2xs"
-                                  style={{ backgroundColor: st.routeColor }}
-                                >
-                                  {st.stopId}
-                                </span>
-                                <div className="min-w-0">
-                                  <p className="text-sm font-semibold text-slate-900 truncate">
-                                    {st.displayName}
-                                  </p>
-                                  <p className="text-xs text-slate-500 truncate">
-                                    {st.category} {st.routeLongName}
-                                    {st.interchanges.length > 0
-                                      ? ` · ${st.interchanges
-                                          .map((i) => i.routeShortName)
-                                          .join(', ')}`
-                                      : ''}
-                                  </p>
+                        <div className="divide-y divide-white/8 rounded-3xl overflow-hidden bg-[#111723] border border-white/8">
+                          {filteredStations.map((st) => {
+                            const lineNum = getRailLineNumber(st.routeId, st.routeShortName);
+                            return (
+                              <button
+                                key={st.stopId}
+                                type="button"
+                                onClick={() => handleSelectStation(st.stopId, true)}
+                                className="w-full px-3.5 py-3 flex items-center justify-between gap-3 hover:bg-white/6 active:bg-white/10 text-left transition-colors cursor-pointer"
+                              >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <span
+                                    className="shrink-0 w-8 h-8 rounded-full text-xs font-black text-white flex items-center justify-center shadow-xs"
+                                    style={{ backgroundColor: st.routeColor }}
+                                  >
+                                    {lineNum}
+                                  </span>
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-extrabold text-white truncate">
+                                      {st.displayName}
+                                    </p>
+                                    <p className="text-xs font-semibold text-slate-400 truncate">
+                                      {st.stopId} · {st.routeLongName}
+                                    </p>
+                                  </div>
                                 </div>
-                              </div>
-                              <ArrowRight className="w-3.5 h-3.5 text-slate-300 shrink-0" />
-                            </button>
-                          ))}
+                                <ArrowRight className="w-4 h-4 text-slate-500 shrink-0" />
+                              </button>
+                            );
+                          })}
                         </div>
                       )}
                     </section>
-
-                    {/* Clean data attribution footer */}
-                    {railData && (
-                      <div className="pt-1 text-[11px] text-slate-400 flex items-center justify-between">
-                        <span>{railData.source}</span>
-                        <span className="font-mono tabular-nums">
-                          {railData.lines.length} {lang === 'en' ? 'lines' : 'tuyến'}
-                        </span>
-                      </div>
-                    )}
                   </>
                 )}
               </div>
@@ -1605,10 +1589,10 @@ export default function App() {
         <OfflineIndicator />
       </div>
 
-      {/* Mobile Material 3 Thumb-Zone Bottom Navigation Bar */}
+      {/* Mobile Dark Transit Thumb-Zone Bottom Navigation Bar */}
       <nav
         aria-label={t.navAriaLabel}
-        className="md:hidden shrink-0 bg-white border-t border-slate-200/90 px-2 py-1.5 grid grid-cols-4 gap-1 z-30 shadow-[0_-2px_10px_rgba(15,23,42,0.05)]"
+        className="md:hidden shrink-0 bg-[#0b0f17] border-t border-white/10 px-2 py-1.5 grid grid-cols-4 gap-1 z-30 shadow-[0_-4px_16px_rgba(0,0,0,0.4)]"
       >
         {(
           [
@@ -1630,14 +1614,14 @@ export default function App() {
             >
               <span
                 className={`px-4 py-1 rounded-full transition-colors ${
-                  active ? 'bg-blue-100 text-blue-700' : 'text-slate-500'
+                  active ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-400'
                 }`}
               >
                 <Icon className="w-4.5 h-4.5" />
               </span>
               <span
                 className={`text-[11px] leading-tight truncate max-w-full ${
-                  active ? 'font-bold text-blue-700' : 'font-medium text-slate-500'
+                  active ? 'font-black text-emerald-400' : 'font-bold text-slate-400'
                 }`}
               >
                 {tab.label}

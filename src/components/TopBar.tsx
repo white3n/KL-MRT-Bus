@@ -43,29 +43,27 @@ export function TopBar({
   const dayLabel = lang === 'en' ? clock.dayLabelEn : clock.dayLabelVi;
 
   return (
-    <header className="shrink-0 bg-white border-b border-slate-200/90 shadow-xs z-30">
-      {/* Row 1: Material 3 Top App Bar */}
-      <div className="h-14 px-3 md:px-6 flex items-center justify-between gap-1.5">
+    <header className="shrink-0 bg-[#0b0f17] border-b border-white/10 z-30">
+      {/* Row 1: Sleek Minimalist Dark Transit Top Bar */}
+      <div className="h-13 px-3.5 md:px-6 flex items-center justify-between gap-2">
         <button
           type="button"
           onClick={() => onModeChange('rail')}
-          className="inline-flex items-center gap-2 text-left cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 rounded-xl group min-w-0"
+          className="inline-flex items-center gap-2.5 text-left cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 rounded-xl group min-w-0"
         >
-          <span className="w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs shrink-0 group-active:scale-95 transition-transform">
-            <TrainFront className="w-4.5 h-4.5" />
+          <span className="w-8.5 h-8.5 rounded-2xl bg-emerald-500 text-slate-950 flex items-center justify-center shadow-sm shadow-emerald-500/25 shrink-0 group-active:scale-95 transition-transform">
+            <TrainFront className="w-4.5 h-4.5 stroke-[2.4]" />
           </span>
           <div className="min-w-0">
-            <div className="font-display text-[15px] sm:text-base md:text-lg font-bold tracking-tight text-slate-900 leading-tight whitespace-nowrap truncate">
-              KL Transit Live
+            <div className="font-display text-base md:text-lg font-black tracking-tight text-white leading-tight whitespace-nowrap truncate">
+              KL Transit
             </div>
             <div
-              className="flex items-center gap-1.5 text-[11px] text-slate-500 leading-tight"
+              className="flex items-center gap-1.5 text-[11px] text-slate-400 leading-tight"
               title={t.clockTitle}
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-              <span className="font-mono font-semibold text-slate-700 tabular-nums">
-                {clock.hhmm}
-              </span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+              <span className="font-mono font-bold text-slate-200 tabular-nums">{clock.hhmm}</span>
               <span>MYT</span>
               <span className="hidden sm:inline" aria-hidden="true">
                 ·
@@ -75,17 +73,17 @@ export function TopBar({
           </div>
         </button>
 
-        {/* Right Controls: Trip Planner + Font Picker + Language Switcher + Icon-Only Refresh */}
-        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+        {/* Minimalist Dark Controls: Trip Planner (desktop) + Font + VI/EN + Refresh */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           <button
             type="button"
             onClick={onOpenTripPlanner}
             aria-label={t.tripPlanner}
             title={t.tripPlanner}
-            className="h-8.5 w-8.5 sm:w-auto sm:h-9 sm:px-3 inline-flex items-center justify-center gap-1.5 rounded-full bg-slate-100 hover:bg-slate-200/80 active:scale-95 text-slate-700 text-xs font-semibold transition-all cursor-pointer"
+            className="hidden sm:inline-flex h-8.5 px-3 items-center justify-center gap-1.5 rounded-full bg-emerald-600/90 hover:bg-emerald-500 active:scale-95 text-white text-xs font-extrabold transition-all cursor-pointer"
           >
-            <Route className="w-4 h-4 text-blue-600 shrink-0" />
-            <span className="hidden sm:inline">{t.tripPlanner}</span>
+            <Route className="w-3.5 h-3.5 shrink-0" />
+            <span>{t.tripPlanner}</span>
           </button>
 
           <button
@@ -93,7 +91,7 @@ export function TopBar({
             onClick={onOpenFontPicker}
             aria-label={t.fontPickerAria}
             title={t.fontPickerAria}
-            className="w-8.5 h-8.5 sm:w-9 sm:h-9 inline-flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200/80 active:scale-95 text-slate-700 transition-all cursor-pointer"
+            className="w-8.5 h-8.5 inline-flex items-center justify-center rounded-full bg-white/10 hover:bg-white/18 active:scale-95 text-slate-200 transition-all cursor-pointer"
           >
             <Type className="w-4 h-4" />
           </button>
@@ -101,16 +99,16 @@ export function TopBar({
           <div
             role="group"
             aria-label={t.langSwitchAria}
-            className="inline-flex items-center p-0.5 rounded-full bg-slate-100 border border-slate-200/90"
+            className="inline-flex items-center p-0.5 rounded-full bg-white/10 border border-white/10"
           >
             <button
               type="button"
               onClick={() => setLang('vi')}
               aria-pressed={lang === 'vi'}
-              className={`px-1.5 sm:px-2 py-1 text-[11px] sm:text-xs font-semibold rounded-full transition-all cursor-pointer ${
+              className={`px-2 py-1 text-[11px] font-extrabold rounded-full transition-all cursor-pointer ${
                 lang === 'vi'
-                  ? 'bg-white text-blue-700 shadow-xs'
-                  : 'text-slate-500 hover:text-slate-900'
+                  ? 'bg-emerald-500 text-slate-950 shadow-xs'
+                  : 'text-slate-300 hover:text-white'
               }`}
             >
               VI
@@ -119,10 +117,10 @@ export function TopBar({
               type="button"
               onClick={() => setLang('en')}
               aria-pressed={lang === 'en'}
-              className={`px-1.5 sm:px-2 py-1 text-[11px] sm:text-xs font-semibold rounded-full transition-all cursor-pointer ${
+              className={`px-2 py-1 text-[11px] font-extrabold rounded-full transition-all cursor-pointer ${
                 lang === 'en'
-                  ? 'bg-white text-blue-700 shadow-xs'
-                  : 'text-slate-500 hover:text-slate-900'
+                  ? 'bg-emerald-500 text-slate-950 shadow-xs'
+                  : 'text-slate-300 hover:text-white'
               }`}
             >
               EN
@@ -135,18 +133,18 @@ export function TopBar({
             disabled={isRefreshing}
             aria-label={t.refreshAria}
             title={t.refreshTitle(nextRefreshInSec)}
-            className="w-8.5 h-8.5 sm:w-9 sm:h-9 inline-flex items-center justify-center rounded-full bg-blue-50 hover:bg-blue-100 active:scale-95 text-blue-700 border border-blue-200/70 disabled:opacity-60 shadow-2xs transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+            className="w-8.5 h-8.5 inline-flex items-center justify-center rounded-full bg-white/10 hover:bg-white/18 active:scale-95 text-emerald-400 disabled:opacity-60 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
           >
             <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </div>
 
-      {/* Row 2 (Desktop / Tablet): Dedicated Material 3 Segmented Navigation Bar */}
+      {/* Row 2 (Desktop / Tablet): Sleek Dark Segmented Navigation Bar */}
       <div className="hidden md:block px-6 pb-2.5 pt-0.5">
         <nav
           aria-label={t.navAriaLabel}
-          className="inline-grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-slate-100/95 border border-slate-200/80"
+          className="inline-grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-white/8 border border-white/10"
         >
           {navItems.map((item) => {
             const active = mode === item.id;
@@ -157,10 +155,10 @@ export function TopBar({
                 type="button"
                 onClick={() => onModeChange(item.id)}
                 aria-pressed={active}
-                className={`inline-flex items-center justify-center gap-1.5 px-5 py-1.5 rounded-xl text-sm font-semibold whitespace-nowrap transition-all active:scale-[0.98] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${
+                className={`inline-flex items-center justify-center gap-1.5 px-5 py-1.5 rounded-xl text-sm font-extrabold whitespace-nowrap transition-all active:scale-[0.98] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
                   active
-                    ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/25'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/70'
+                    ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                    : 'text-slate-300 hover:text-white hover:bg-white/8'
                 }`}
               >
                 <Icon className="w-4 h-4 shrink-0" />
