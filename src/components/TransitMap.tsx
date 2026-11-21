@@ -9,8 +9,11 @@ import {
   Globe2,
   Layers,
   LocateFixed,
+  Maximize2,
+  Minimize2,
   Moon,
   Navigation,
+  Settings,
   Sun,
   TrainFront,
   X,
@@ -137,6 +140,9 @@ interface TransitMapProps {
   onToggleMyBusStation: (station: MyBusStation) => void;
   onClearBusFilter: () => void;
   onClearMapSelection: () => void;
+  isFullMapMobile?: boolean;
+  onToggleFullMap?: () => void;
+  onOpenSettings?: () => void;
 }
 
 function filterValidCoords(points: [number, number][]): [number, number][] {
@@ -238,6 +244,9 @@ export function TransitMap({
   onToggleMyBusStation,
   onClearBusFilter,
   onClearMapSelection,
+  isFullMapMobile = false,
+  onToggleFullMap,
+  onOpenSettings,
 }: TransitMapProps) {
   const { lang } = useLanguage();
   const t = translations[lang];
@@ -772,33 +781,67 @@ export function TransitMap({
     <div className="relative w-full h-full bg-[#16191f]">
       <div ref={containerRef} className="absolute inset-0 z-0" />
 
-      {/* Mobile Floating Transit Dark Layer Switcher (top-left) */}
-      <div className="md:hidden absolute top-3.5 left-3.5 z-[400] inline-flex items-center gap-1 p-1 rounded-2xl bg-[#111622]/92 backdrop-blur-md border border-white/15 shadow-xl">
-        {(
-          [
-            { id: 'rail' as const, label: t.modeRail, icon: TrainFront },
-            { id: 'bus' as const, label: t.modeBus, icon: Bus },
-            { id: 'all' as const, label: t.modeAll, icon: Layers },
-          ] as const
-        ).map((item) => {
-          const Icon = item.icon;
-          const active = mode === item.id;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onModeChange(item.id)}
-              className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-extrabold transition-all active:scale-95 cursor-pointer ${
-                active
-                  ? 'bg-emerald-500 text-slate-950 shadow-xs'
-                  : 'text-slate-300 hover:bg-white/10'
-              }`}
-            >
-              <Icon className="w-3.5 h-3.5 shrink-0" />
-              <span>{item.label}</span>
-            </button>
-          );
-        })}
+      {/* Mobile Floating Top-Left: Cute Transit Settings Circle + Full/Split Map Pill */}
+      <div className="md:hidden absolute top-3 left-3 z-[400] flex items-center gap-2">
+        {onOpenSettings && (
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            aria-label={t.settingsTitle}
+            title={t.settingsTitle}
+            className="w-10 h-10 rounded-full bg-[#111622]/92 backdrop-blur-md border border-white/15 shadow-xl flex items-center justify-center text-white active:scale-95 transition-all cursor-pointer"
+          >
+            <Settings className="w-4.5 h-4.5" />
+          </button>
+        )}
+
+        {onToggleFullMap && (
+          <button
+            type="button"
+            onClick={onToggleFullMap}
+            aria-label={isFullMapMobile ? t.collapseMapLabel : t.expandMapLabel}
+            className="h-10 px-3 rounded-full bg-[#111622]/92 backdrop-blur-md border border-white/15 shadow-xl inline-flex items-center gap-1.5 text-xs font-extrabold text-white active:scale-95 transition-all cursor-pointer"
+          >
+            {isFullMapMobile ? (
+              <>
+                <Minimize2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span>{t.collapseMapLabel}</span>
+              </>
+            ) : (
+              <>
+                <Maximize2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span>{t.expandMapLabel}</span>
+              </>
+            )}
+          </button>
+        )}
+
+        {isFullMapMobile && (
+          <div className="inline-flex items-center gap-0.5 p-1 rounded-full bg-[#111622]/92 backdrop-blur-md border border-white/15 shadow-xl">
+            {(
+              [
+                { id: 'rail' as const, icon: TrainFront },
+                { id: 'bus' as const, icon: Bus },
+                { id: 'all' as const, icon: Layers },
+              ] as const
+            ).map((item) => {
+              const Icon = item.icon;
+              const active = mode === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onModeChange(item.id)}
+                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer ${
+                    active ? 'bg-emerald-500 text-slate-950' : 'text-slate-300'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Active Bus Filter Banner on Map */}
@@ -855,7 +898,9 @@ export function TransitMap({
           onClick={handleRecenter}
           aria-label={t.mapRecenterTitle}
           title={t.mapRecenterTitle}
-          className="inline-flex items-center justify-center gap-2 h-11 min-w-11 px-3 sm:px-3.5 bg-[#111622]/92 hover:bg-[#1a2233] active:scale-95 text-white border border-white/15 rounded-2xl shadow-lg text-xs font-bold transition-all cursor-pointer"
+          className={`${
+            isFullMapMobile ? 'inline-flex' : 'hidden md:inline-flex'
+          } items-center justify-center gap-2 h-11 min-w-11 px-3 sm:px-3.5 bg-[#111622]/92 hover:bg-[#1a2233] active:scale-95 text-white border border-white/15 rounded-2xl shadow-lg text-xs font-bold transition-all cursor-pointer`}
         >
           <Crosshair className="w-4.5 h-4.5 text-slate-300" />
           <span className="hidden sm:inline">{t.mapRecenterLabel}</span>

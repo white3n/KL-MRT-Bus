@@ -4,10 +4,9 @@ import {
   ArrowRight,
   ArrowRightCircle,
   Bus,
+  ChevronDown,
   Home,
   LocateFixed,
-  Map as MapIcon,
-  Navigation,
   RotateCcw,
   Route,
   Search,
@@ -27,10 +26,12 @@ import { NearbyPanel } from './components/NearbyPanel';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { PullToRefresh } from './components/PullToRefresh';
 import { PWAInstallButton } from './components/PWAInstallButton';
+import { QuickSettingsModal } from './components/QuickSettingsModal';
 import { StationDepartureBoard } from './components/StationDepartureBoard';
 import { TopBar } from './components/TopBar';
 import { TransitMap } from './components/TransitMap';
 import { TripPlannerModal } from './components/TripPlannerModal';
+import { UnifiedSearchOverlay } from './components/UnifiedSearchOverlay';
 import { useAppFont } from './hooks/useAppFont';
 import { useFavoriteStations } from './hooks/useFavorites';
 import { useMyStations, type MyBusStation, type MyRailStation } from './hooks/useMyStations';
@@ -118,6 +119,9 @@ export default function App() {
   const [directionsTarget, setDirectionsTarget] = useState<DirectionsTarget | null>(null);
   const [tripPlannerOpen, setTripPlannerOpen] = useState(false);
   const [tripPlannerTab, setTripPlannerTab] = useState<'rail' | 'bus'>('rail');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [showAllStations, setShowAllStations] = useState(false);
   const [fontPickerOpen, setFontPickerOpen] = useState(false);
   const [myStationSetupMode, setMyStationSetupMode] = useState<'rail' | 'bus' | null>(null);
   const [myRailDepartures, setMyRailDepartures] = useState<StationDeparturePayload | null>(null);
@@ -857,22 +861,17 @@ export default function App() {
 
   // Decide which panel content renders in the left workspace
   const showingBusPanel = mode === 'bus' || (mode === 'all' && selectedBus !== null);
+  const isMobileDetailView = Boolean(selectedStationId || selectedBus || showNearbyView);
+  const isMobileSplitHome = mobileView === 'list' && !isMobileDetailView;
 
-  // Active bottom nav tab on mobile
-  const activeMobileTab: 'rail' | 'bus' | 'nearby' | 'map' =
-    mobileView === 'map'
-      ? 'map'
-      : showNearbyView
-        ? 'nearby'
-        : showingBusPanel
-          ? 'bus'
-          : 'rail';
+  // Simplified 3-tab bottom nav on mobile (Map is already live right at the top of Home & Bus!)
+  const activeMobileTab: 'home' | 'bus' | 'nearby' = showNearbyView
+    ? 'nearby'
+    : showingBusPanel
+      ? 'bus'
+      : 'home';
 
-  const handleMobileNavSelect = (tab: 'rail' | 'bus' | 'nearby' | 'map') => {
-    if (tab === 'map') {
-      setMobileView('map');
-      return;
-    }
+  const handleMobileNavSelect = (tab: 'home' | 'bus' | 'nearby') => {
     if (tab === 'nearby') {
       setMobileView('list');
       setShowNearbyView(true);
@@ -896,18 +895,21 @@ export default function App() {
 
   return (
     <div className="h-dvh w-screen flex flex-col bg-[#0b0f17] text-white overflow-hidden safe-area-shell">
-      <TopBar
-        mode={mode}
-        onModeChange={handleModeChange}
-        onRefresh={handleManualRefresh}
-        onOpenTripPlanner={() => {
-          setTripPlannerTab(showingBusPanel ? 'bus' : 'rail');
-          setTripPlannerOpen(true);
-        }}
-        onOpenFontPicker={() => setFontPickerOpen(true)}
-        isRefreshing={isRefreshing}
-        nextRefreshInSec={2}
-      />
+      {/* Desktop TopBar (Hidden on mobile for true uncluttered Transit App full-bleed map top!) */}
+      <div className="hidden md:block shrink-0">
+        <TopBar
+          mode={mode}
+          onModeChange={handleModeChange}
+          onRefresh={handleManualRefresh}
+          onOpenTripPlanner={() => {
+            setTripPlannerTab(showingBusPanel ? 'bus' : 'rail');
+            setTripPlannerOpen(true);
+          }}
+          onOpenFontPicker={() => setFontPickerOpen(true)}
+          isRefreshing={isRefreshing}
+          nextRefreshInSec={2}
+        />
+      </div>
 
       {/* Live Activity / Lock-Screen Sync Banner */}
       <LiveTrackerPill
@@ -939,52 +941,33 @@ export default function App() {
         }}
       />
 
-      {/* Main Split Workspace */}
-      <div className="flex-1 flex min-h-0 relative">
-        {/* Left Interactive Transit Panel (Sleek Transit Dark Theme) */}
+      {/* Main Split Workspace: On mobile -> Map on top (34% split) + Live Feed below; On desktop -> Left panel + Right map */}
+      <div className="flex-1 flex flex-col md:flex-row min-h-0 relative">
+        {/* Interactive Transit Panel (Below map on mobile, left sidebar on desktop) */}
         <aside
           className={`${
-            mobileView === 'list' ? 'flex' : 'hidden'
-          } md:flex flex-col w-full md:w-[420px] lg:w-[440px] shrink-0 bg-[#0b0f17] border-r border-white/10 min-h-0 z-20`}
+            mobileView === 'map' ? 'hidden' : 'flex flex-1 min-h-0'
+          } md:flex md:flex-none order-2 md:order-1 flex-col w-full md:w-[420px] lg:w-[440px] shrink-0 bg-[#0b0f17] border-r border-white/10 min-h-0 z-20`}
         >
-          {/* Iconic Transit App Green "Where to?" Bar + Docked Home My-Station Button */}
-          {!showNearbyView && (
-            <div className="px-3.5 py-3 border-b border-white/10 shrink-0 bg-[#0b0f17] space-y-2.5">
-              <div className="flex items-stretch rounded-2xl bg-[#166534] shadow-md shadow-black/30 overflow-hidden border border-emerald-400/20">
-                <div className="relative flex-1 min-w-0 flex items-center">
-                  <Search className="w-4.5 h-4.5 text-emerald-100/90 absolute left-3.5 pointer-events-none" />
-                  <input
-                    type="text"
-                    value={showingBusPanel ? busSearchQuery : railSearchQuery}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (showingBusPanel) {
-                        setBusSearchQuery(val);
-                      } else {
-                        setRailSearchQuery(val);
-                      }
-                      if (showNearbyView) setShowNearbyView(false);
-                    }}
-                    placeholder={
-                      showingBusPanel ? t.searchBusPlaceholder : t.searchRailPlaceholder
-                    }
-                    className="w-full pl-10 pr-8 py-3 text-sm font-extrabold bg-transparent text-white placeholder:text-emerald-100/80 focus:outline-none"
-                  />
-                  {(showingBusPanel ? busSearchQuery : railSearchQuery) && (
-                    <button
-                      type="button"
-                      aria-label={t.clearSearchAria}
-                      onClick={() =>
-                        showingBusPanel ? setBusSearchQuery('') : setRailSearchQuery('')
-                      }
-                      className="absolute right-2 p-1 text-emerald-100 hover:text-white rounded-full cursor-pointer"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
+          {/* Iconic Transit App Green "Where to?" Bar (overlaps map edge cleanly on mobile split home!) */}
+          {!isMobileDetailView && (
+            <div
+              className={`px-3.5 pb-2.5 shrink-0 bg-[#0b0f17] space-y-2.5 ${
+                isMobileSplitHome ? '-mt-5 pt-0 relative z-30 bg-transparent' : 'pt-3 border-b border-white/10'
+              }`}
+            >
+              <div className="flex items-stretch rounded-2xl bg-[#166534] shadow-xl shadow-black/45 overflow-hidden border border-emerald-400/25">
+                <button
+                  type="button"
+                  onClick={() => setSearchOpen(true)}
+                  className="flex-1 min-w-0 px-3.5 py-3 flex items-center gap-2.5 text-left active:bg-white/10 transition-colors cursor-pointer"
+                >
+                  <Search className="w-4.5 h-4.5 text-emerald-100 shrink-0" />
+                  <span className="text-sm font-black text-emerald-50/95 truncate">
+                    {t.whereToPlaceholder}
+                  </span>
+                </button>
 
-                {/* Right-docked Trip Planner & Home My-Station Icon Buttons (Transit Screenshot 8/9!) */}
                 <button
                   type="button"
                   onClick={() => {
@@ -1008,16 +991,19 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Rail Line Circular Color Filter Chips when viewing Rail list */}
+              {/* Clean Rail Line Filter Pills (only when filtering Rail) */}
               {!showingBusPanel && !selectedStationId && railData && (
                 <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
                   <button
                     type="button"
-                    onClick={() => setSelectedLineId('all')}
-                    className={`px-3 py-1.5 text-xs font-extrabold rounded-full whitespace-nowrap shrink-0 active:scale-95 transition-all cursor-pointer ${
+                    onClick={() => {
+                      setSelectedLineId('all');
+                      setShowAllStations(false);
+                    }}
+                    className={`px-3 py-1 text-xs font-extrabold rounded-full whitespace-nowrap shrink-0 active:scale-95 transition-all cursor-pointer ${
                       selectedLineId === 'all'
-                        ? 'bg-emerald-500 text-slate-950 shadow-xs'
-                        : 'bg-white/10 text-slate-300 hover:text-white hover:bg-white/16'
+                        ? 'bg-emerald-500 text-slate-950'
+                        : 'bg-white/10 text-slate-300'
                     }`}
                   >
                     {t.allLines}
@@ -1030,14 +1016,12 @@ export default function App() {
                         key={line.routeId}
                         type="button"
                         onClick={() => setSelectedLineId(line.routeId)}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-extrabold rounded-full whitespace-nowrap shrink-0 active:scale-95 transition-all cursor-pointer ${
-                          active
-                            ? 'bg-white text-slate-950 shadow-xs'
-                            : 'bg-white/10 text-slate-200 hover:bg-white/16'
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-extrabold rounded-full whitespace-nowrap shrink-0 active:scale-95 transition-all cursor-pointer ${
+                          active ? 'bg-white text-slate-950' : 'bg-white/10 text-slate-200'
                         }`}
                       >
                         <span
-                          className="w-4.5 h-4.5 rounded-full text-[10px] font-black text-white flex items-center justify-center shrink-0"
+                          className="w-4 h-4 rounded-full text-[9px] font-black text-white flex items-center justify-center shrink-0"
                           style={{ backgroundColor: line.color }}
                         >
                           {lineNum}
@@ -1046,20 +1030,6 @@ export default function App() {
                       </button>
                     );
                   })}
-                </div>
-              )}
-
-              {/* Quick mode switch note when in 'all' mode */}
-              {mode === 'all' && !selectedStationId && !selectedBus && (
-                <div className="flex items-center justify-between text-xs text-slate-400 pt-0.5">
-                  <span>{t.showingAllSummary(busData?.counts.total ?? 0)}</span>
-                  <button
-                    type="button"
-                    onClick={() => setMode('bus')}
-                    className="font-extrabold text-emerald-400 hover:text-emerald-300 cursor-pointer whitespace-nowrap"
-                  >
-                    {t.viewBusList} →
-                  </button>
                 </div>
               )}
             </div>
@@ -1130,6 +1100,8 @@ export default function App() {
             ) : selectedStationId ? (
               <StationDepartureBoard
                 data={departures}
+                allStations={railData?.stations || []}
+                userLocation={userLocation}
                 loading={departuresLoading}
                 error={departuresError}
                 customTime={customTime}
@@ -1349,7 +1321,7 @@ export default function App() {
                                           ? t.minutesWord
                                           : dir.isPeakNow
                                             ? t.peakHours
-                                            : t.minutesWord + '/chuyến'}
+                                            : t.freqUnitLabel}
                                       </div>
                                     </>
                                   )}
@@ -1469,66 +1441,81 @@ export default function App() {
                       </section>
                     )}
 
-                    {/* Minimalist Dark Station Directory */}
+                    {/* Minimalist Collapsible Station Directory (Clean uncluttered home!) */}
                     <section className="px-4 pt-5 space-y-2.5">
-                      <div className="flex items-baseline justify-between">
-                        <h2 className="font-display text-xs font-black uppercase tracking-wider text-slate-400">
-                          {selectedLineId === 'all'
-                            ? t.allRailStations
-                            : railData?.lines.find((l) => l.routeId === selectedLineId)
-                                ?.longName || t.allRailStations}
-                        </h2>
-                        <span className="font-mono text-[11px] font-bold text-slate-500 tabular-nums">
-                          {t.stationsCount(filteredStations.length)}
-                        </span>
-                      </div>
-
-                      {filteredStations.length === 0 ? (
-                        <div className="p-6 text-center rounded-3xl bg-white/6 space-y-2.5">
-                          <p className="text-sm font-black text-white">{t.noStationsMatch}</p>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setRailSearchQuery('');
-                              setSelectedLineId('all');
-                            }}
-                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-black bg-emerald-500 text-slate-950 rounded-full cursor-pointer"
-                          >
-                            {t.clearFilters}
-                          </button>
-                        </div>
+                      {selectedLineId === 'all' && !railSearchQuery && !showAllStations ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowAllStations(true)}
+                          className="w-full py-3.5 px-4 rounded-2xl bg-white/8 hover:bg-white/12 text-xs font-black text-slate-200 flex items-center justify-center gap-2 active:scale-[0.99] transition-all cursor-pointer"
+                        >
+                          <span>
+                            {t.allRailStations} ({t.stationsCount(filteredStations.length)})
+                          </span>
+                          <ChevronDown className="w-4 h-4 text-emerald-400" />
+                        </button>
                       ) : (
-                        <div className="divide-y divide-white/8 rounded-3xl overflow-hidden bg-[#111723] border border-white/8">
-                          {filteredStations.map((st) => {
-                            const lineNum = getRailLineNumber(st.routeId, st.routeShortName);
-                            return (
+                        <>
+                          <div className="flex items-baseline justify-between">
+                            <h2 className="font-display text-xs font-black uppercase tracking-wider text-slate-400">
+                              {selectedLineId === 'all'
+                                ? t.allRailStations
+                                : railData?.lines.find((l) => l.routeId === selectedLineId)
+                                    ?.longName || t.allRailStations}
+                            </h2>
+                            <span className="font-mono text-[11px] font-bold text-slate-500 tabular-nums">
+                              {t.stationsCount(filteredStations.length)}
+                            </span>
+                          </div>
+
+                          {filteredStations.length === 0 ? (
+                            <div className="p-6 text-center rounded-3xl bg-white/6 space-y-2.5">
+                              <p className="text-sm font-black text-white">{t.noStationsMatch}</p>
                               <button
-                                key={st.stopId}
                                 type="button"
-                                onClick={() => handleSelectStation(st.stopId, true)}
-                                className="w-full px-3.5 py-3 flex items-center justify-between gap-3 hover:bg-white/6 active:bg-white/10 text-left transition-colors cursor-pointer"
+                                onClick={() => {
+                                  setRailSearchQuery('');
+                                  setSelectedLineId('all');
+                                }}
+                                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-black bg-emerald-500 text-slate-950 rounded-full cursor-pointer"
                               >
-                                <div className="flex items-center gap-3 min-w-0">
-                                  <span
-                                    className="shrink-0 w-8 h-8 rounded-full text-xs font-black text-white flex items-center justify-center shadow-xs"
-                                    style={{ backgroundColor: st.routeColor }}
-                                  >
-                                    {lineNum}
-                                  </span>
-                                  <div className="min-w-0">
-                                    <p className="text-sm font-extrabold text-white truncate">
-                                      {st.displayName}
-                                    </p>
-                                    <p className="text-xs font-semibold text-slate-400 truncate">
-                                      {st.stopId} · {st.routeLongName}
-                                    </p>
-                                  </div>
-                                </div>
-                                <ArrowRight className="w-4 h-4 text-slate-500 shrink-0" />
+                                {t.clearFilters}
                               </button>
-                            );
-                          })}
-                        </div>
+                            </div>
+                          ) : (
+                            <div className="divide-y divide-white/8 rounded-3xl overflow-hidden bg-[#111723] border border-white/8">
+                              {filteredStations.map((st) => {
+                                const lineNum = getRailLineNumber(st.routeId, st.routeShortName);
+                                return (
+                                  <button
+                                    key={st.stopId}
+                                    type="button"
+                                    onClick={() => handleSelectStation(st.stopId, true)}
+                                    className="w-full px-3.5 py-3 flex items-center justify-between gap-3 hover:bg-white/6 active:bg-white/10 text-left transition-colors cursor-pointer"
+                                  >
+                                    <div className="flex items-center gap-3 min-w-0">
+                                      <span
+                                        className="shrink-0 w-8 h-8 rounded-full text-xs font-black text-white flex items-center justify-center shadow-xs"
+                                        style={{ backgroundColor: st.routeColor }}
+                                      >
+                                        {lineNum}
+                                      </span>
+                                      <div className="min-w-0">
+                                        <p className="text-sm font-extrabold text-white truncate">
+                                          {st.displayName}
+                                        </p>
+                                        <p className="text-xs font-semibold text-slate-400 truncate">
+                                          {st.stopId} · {st.routeLongName}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <ArrowRight className="w-4 h-4 text-slate-500 shrink-0" />
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </>
                       )}
                     </section>
                   </>
@@ -1541,15 +1528,22 @@ export default function App() {
           <PWAInstallButton />
         </aside>
 
-        {/* Right Full-Viewport Interactive Kuala Lumpur Map */}
+        {/* Interactive KL Map: Always live in top 34% on mobile Home/Bus, Fullscreen when expanded, Right pane on desktop */}
         <main
           className={`${
-            mobileView === 'map' ? 'block' : 'hidden'
-          } md:block flex-1 min-w-0 h-full relative`}
+            mobileView === 'map'
+              ? 'block flex-1 h-full'
+              : isMobileSplitHome
+                ? 'block h-[34dvh] shrink-0'
+                : 'hidden'
+          } md:block md:flex-1 md:h-full order-1 md:order-2 min-w-0 relative`}
         >
           <TransitMap
             mode={mode}
-            isVisible={mobileView === 'map'}
+            isVisible={mobileView === 'map' || isMobileSplitHome}
+            isFullMapMobile={mobileView === 'map'}
+            onToggleFullMap={() => setMobileView((v) => (v === 'map' ? 'list' : 'map'))}
+            onOpenSettings={() => setSettingsOpen(true)}
             lines={railData?.lines || []}
             stations={railData?.stations || []}
             selectedLineId={selectedLineId}
@@ -1589,17 +1583,16 @@ export default function App() {
         <OfflineIndicator />
       </div>
 
-      {/* Mobile Dark Transit Thumb-Zone Bottom Navigation Bar */}
+      {/* Minimalist 3-Tab Dark Transit Bottom Navigation Bar */}
       <nav
         aria-label={t.navAriaLabel}
-        className="md:hidden shrink-0 bg-[#0b0f17] border-t border-white/10 px-2 py-1.5 grid grid-cols-4 gap-1 z-30 shadow-[0_-4px_16px_rgba(0,0,0,0.4)]"
+        className="md:hidden shrink-0 bg-[#0b0f17] border-t border-white/10 px-3 py-1.5 grid grid-cols-3 gap-1 z-30 shadow-[0_-4px_16px_rgba(0,0,0,0.4)]"
       >
         {(
           [
-            { id: 'rail' as const, label: t.modeRail, icon: TrainFront },
+            { id: 'home' as const, label: t.homeTab, icon: TrainFront },
             { id: 'bus' as const, label: t.modeBus, icon: Bus },
             { id: 'nearby' as const, label: t.navNearby, icon: LocateFixed },
-            { id: 'map' as const, label: t.navMap, icon: MapIcon },
           ] as const
         ).map((tab) => {
           const Icon = tab.icon;
@@ -1613,7 +1606,7 @@ export default function App() {
               className="flex flex-col items-center justify-center gap-0.5 py-1 cursor-pointer active:scale-95 transition-transform"
             >
               <span
-                className={`px-4 py-1 rounded-full transition-colors ${
+                className={`px-5 py-1 rounded-full transition-colors ${
                   active ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-400'
                 }`}
               >
@@ -1682,6 +1675,55 @@ export default function App() {
           else if (myStationSetupMode === 'bus') setMyBusStation(null);
         }}
         onClose={() => setMyStationSetupMode(null)}
+      />
+
+      {/* Unified Transit-Style Full-Screen "Where to?" Search Overlay */}
+      <UnifiedSearchOverlay
+        open={searchOpen}
+        stations={railData?.stations || []}
+        liveVehicles={realtimeBusVehicles}
+        userLocation={userLocation}
+        onClose={() => setSearchOpen(false)}
+        onSelectStation={(id) => handleSelectStation(id, true)}
+        onSelectBus={(bus) => {
+          setMode('bus');
+          handleSelectBus(bus, true);
+        }}
+        onSelectBusStop={(stop) => {
+          setFocusedBusStop({
+            stopId: stop.stopId,
+            stopCode: stop.stopCode,
+            stopName: stop.stopName,
+            lat: stop.lat,
+            lon: stop.lon,
+            category: stop.category,
+            distanceMeters: 0,
+            walkMinutes: 1,
+          });
+          setMode('bus');
+          setMobileView('map');
+        }}
+        onOpenTripPlanner={() => {
+          setTripPlannerTab(showingBusPanel ? 'bus' : 'rail');
+          setTripPlannerOpen(true);
+        }}
+        onOpenNearby={() => handleMobileNavSelect('nearby')}
+        onOpenMyRailSetup={() => setMyStationSetupMode('rail')}
+        onOpenMyBusSetup={() => setMyStationSetupMode('bus')}
+      />
+
+      {/* Quick Settings Sheet (Language, Google Font, My Stations, Refresh) */}
+      <QuickSettingsModal
+        open={settingsOpen}
+        fontFamily={fontFamily}
+        myRailName={myRailStation?.displayName || null}
+        myBusName={myBusStation?.stopName || null}
+        isRefreshing={isRefreshing}
+        onClose={() => setSettingsOpen(false)}
+        onOpenFontPicker={() => setFontPickerOpen(true)}
+        onOpenMyRailSetup={() => setMyStationSetupMode('rail')}
+        onOpenMyBusSetup={() => setMyStationSetupMode('bus')}
+        onRefresh={handleManualRefresh}
       />
 
       {/* Google Fonts Picker Modal */}

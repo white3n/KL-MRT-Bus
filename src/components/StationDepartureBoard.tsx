@@ -6,6 +6,7 @@ import {
   BellRing,
   Check,
   Clock,
+  ExternalLink,
   Navigation,
   Repeat,
   RotateCcw,
@@ -15,13 +16,19 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { translations, useLanguage } from '../i18n';
-import type { StationDeparturePayload } from '../types/transit';
-import type { DirectionsTarget } from '../utils/directionsHelper';
+import type { RailStation, StationDeparturePayload, UserLocation } from '../types/transit';
+import {
+  buildGoogleMapsDirectionsUrl,
+  openExternalMapUrl,
+  type DirectionsTarget,
+} from '../utils/directionsHelper';
 import { getRailLineNumber, getTransitPalette } from '../utils/transitTheme';
 import { dayTypeLabel } from '../utils/transitHelpers';
 
 interface StationDepartureBoardProps {
   data: StationDeparturePayload | null;
+  allStations?: RailStation[];
+  userLocation?: UserLocation | null;
   loading: boolean;
   error: string | null;
   customTime: string;
@@ -40,6 +47,8 @@ interface StationDepartureBoardProps {
 
 export function StationDepartureBoard({
   data,
+  allStations = [],
+  userLocation = null,
   loading,
   error,
   customTime,
@@ -51,7 +60,7 @@ export function StationDepartureBoard({
   onSelectStation,
   onToggleFavorite,
   onToggleTrack,
-  onOpenDirections,
+  onOpenDirections: _onOpenDirections,
   onBack,
   onRetry,
 }: StationDepartureBoardProps) {
@@ -248,22 +257,27 @@ export function StationDepartureBoard({
             </p>
           </div>
 
-          {/* Iconic Transit Floating GO Button */}
+          {/* Iconic Transit Green GO Button: 1-tap straight to Google Maps (travelmode=transit) */}
           <button
             type="button"
-            onClick={() =>
-              onOpenDirections({
-                name: station.displayName,
-                subtitle: `${station.category} ${station.routeLongName}`,
-                badge: station.stopId,
-                color: station.routeColor,
-                lat: station.lat,
-                lon: station.lon,
-                kind: 'rail',
-              })
-            }
-            className="shrink-0 mt-1 px-5 py-3 rounded-2xl text-white font-black text-lg italic tracking-tight shadow-lg active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
-            style={{ backgroundColor: palette.vivid }}
+            onClick={() => {
+              const url = buildGoogleMapsDirectionsUrl(
+                userLocation,
+                {
+                  name: station.displayName,
+                  subtitle: `${station.category} ${station.routeLongName}`,
+                  badge: station.stopId,
+                  color: station.routeColor,
+                  lat: station.lat,
+                  lon: station.lon,
+                  kind: 'rail',
+                },
+                'transit'
+              );
+              openExternalMapUrl(url);
+            }}
+            title={t.checkOnGoogleMaps}
+            className="shrink-0 mt-1 px-5 py-3 rounded-2xl bg-[#16a34a] hover:bg-[#15803d] text-white font-black text-lg italic tracking-tight shadow-lg shadow-black/30 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
           >
             <Navigation className="w-4 h-4 not-italic" />
             <span>GO</span>
@@ -374,22 +388,57 @@ export function StationDepartureBoard({
                         </span>
                       </div>
                       <div className="text-[11px] font-extrabold mt-0.5" style={{ color: palette.muted }}>
-                        {dir.isPeakNow ? t.peakHours : t.minutesWord + '/chuyến'}
+                        {dir.isPeakNow ? t.peakHours : t.freqUnitLabel}
                       </div>
                     </div>
                   )}
                 </div>
 
-                {/* Clean First - Last Train Operating Hours Strip */}
-                <div className="px-3.5 py-2 rounded-2xl bg-black/22 flex items-center justify-between text-xs font-bold">
+                {/* Clean First - Last Train Strip + 1-Tap Google Maps Transit check for THIS direction */}
+                <div className="px-3.5 py-2 rounded-2xl bg-black/22 flex items-center justify-between gap-2 text-xs font-bold flex-wrap">
                   <span style={{ color: palette.muted }}>
-                    {t.firstTrainShort}{' '}
-                    <strong className="text-white font-mono ml-1">{dir.firstTrain}</strong>
+                    <strong className="text-white font-mono">
+                      {dir.firstTrain} – {dir.lastTrain}
+                    </strong>
                   </span>
-                  <span style={{ color: palette.muted }}>
-                    {t.lastTrainShort}{' '}
-                    <strong className="text-white font-mono ml-1">{dir.lastTrain}</strong>
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Open Google Maps transit from THIS station -> next stop along this exact direction
+                      const nextSt = dir.nextStopName
+                        ? allStations.find(
+                            (s) =>
+                              s.routeId === station.routeId &&
+                              s.displayName.toLowerCase() === dir.nextStopName!.toLowerCase()
+                          )
+                        : null;
+                      const destLat = nextSt ? nextSt.lat : station.lat;
+                      const destLon = nextSt ? nextSt.lon : station.lon;
+                      const fromOrigin: UserLocation | null = nextSt
+                        ? {
+                            lat: station.lat,
+                            lon: station.lon,
+                            accuracyMeters: 10,
+                            timestamp: Date.now(),
+                          }
+                        : userLocation;
+                      const url = buildGoogleMapsDirectionsUrl(
+                        fromOrigin,
+                        {
+                          name: nextSt ? nextSt.displayName : station.displayName,
+                          lat: destLat,
+                          lon: destLon,
+                          kind: 'rail',
+                        },
+                        'transit'
+                      );
+                      openExternalMapUrl(url);
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/12 hover:bg-white/22 text-white text-[11px] font-extrabold active:scale-95 transition-all cursor-pointer"
+                  >
+                    <span>{t.checkOnGoogleMaps}</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </button>
                 </div>
 
                 {/* Subtle Static GTFS Reference Times (~HH:MM) */}
