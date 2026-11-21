@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BusLivePanel } from './components/BusLivePanel';
 import { DirectionsSheet } from './components/DirectionsSheet';
 import { FontPickerModal } from './components/FontPickerModal';
+import { JourneyPlannerView } from './components/JourneyPlannerView';
 import { LiveTrackerPill, type ActiveTrackerDisplay } from './components/LiveTrackerPill';
 import { MyStationSetupModal } from './components/MyStationSetupModal';
 import { NearbyPanel } from './components/NearbyPanel';
@@ -37,6 +38,7 @@ import { useFavoriteStations } from './hooks/useFavorites';
 import { useMyStations, type MyBusStation, type MyRailStation } from './hooks/useMyStations';
 import { translations, useLanguage } from './i18n';
 import { liveNotificationService } from './services/liveNotificationService';
+import type { KlPlaceResult } from './services/placeSearch';
 import { transitApi } from './services/transitApi';
 import type {
   BusCategory,
@@ -120,6 +122,11 @@ export default function App() {
   const [tripPlannerOpen, setTripPlannerOpen] = useState(false);
   const [tripPlannerTab, setTripPlannerTab] = useState<'rail' | 'bus'>('rail');
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchPickTarget, setSearchPickTarget] = useState<'default' | 'origin' | 'destination'>('default');
+  const [journeyEndpoints, setJourneyEndpoints] = useState<{
+    origin: KlPlaceResult;
+    destination: KlPlaceResult;
+  } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showAllStations, setShowAllStations] = useState(false);
   const [fontPickerOpen, setFontPickerOpen] = useState(false);
@@ -1311,7 +1318,7 @@ export default function App() {
                                         className="font-display text-4xl font-black leading-none tabular-nums"
                                         style={{ color: pal.accent }}
                                       >
-                                        {isTimetable ? next.minutesAway : dir.currentHeadwayMinutes}
+                                        {next.minutesAway <= 0 ? '<1' : next.minutesAway}
                                       </div>
                                       <div
                                         className="text-[11px] font-bold mt-0.5"
@@ -1319,9 +1326,7 @@ export default function App() {
                                       >
                                         {isTimetable
                                           ? t.minutesWord
-                                          : dir.isPeakNow
-                                            ? t.peakHours
-                                            : t.freqUnitLabel}
+                                          : `${t.minutesWord} · ~${next.arrivalTime}`}
                                       </div>
                                     </>
                                   )}
@@ -1677,13 +1682,17 @@ export default function App() {
         onClose={() => setMyStationSetupMode(null)}
       />
 
-      {/* Unified Transit-Style Full-Screen "Where to?" Search Overlay */}
+      {/* Unified Transit-Style Full-Screen "Where to?" Search Overlay (Places + Bus + Rail) */}
       <UnifiedSearchOverlay
         open={searchOpen}
+        pickTarget={searchPickTarget}
         stations={railData?.stations || []}
         liveVehicles={realtimeBusVehicles}
         userLocation={userLocation}
-        onClose={() => setSearchOpen(false)}
+        onClose={() => {
+          setSearchOpen(false);
+          setSearchPickTarget('default');
+        }}
         onSelectStation={(id) => handleSelectStation(id, true)}
         onSelectBus={(bus) => {
           setMode('bus');
@@ -1703,6 +1712,55 @@ export default function App() {
           setMode('bus');
           setMobileView('map');
         }}
+        onSelectPlaceForJourney={(place) => {
+          if (searchPickTarget === 'origin' && journeyEndpoints) {
+            setJourneyEndpoints({ ...journeyEndpoints, origin: place });
+            return;
+          }
+          if (searchPickTarget === 'destination' && journeyEndpoints) {
+            setJourneyEndpoints({ ...journeyEndpoints, destination: place });
+            return;
+          }
+          const defaultOrigin: KlPlaceResult = userLocation
+            ? {
+                id: 'gps:current',
+                name: lang === 'en' ? 'Current location' : 'Vị trí hiện tại (GPS)',
+                subtitle: 'Kuala Lumpur',
+                lat: userLocation.lat,
+                lon: userLocation.lon,
+                kind: 'gps',
+              }
+            : myBusStation
+              ? {
+                  id: `mybus:${myBusStation.stopId}`,
+                  name: myBusStation.stopName,
+                  subtitle: t.myBusStationLabel,
+                  lat: myBusStation.lat,
+                  lon: myBusStation.lon,
+                  kind: 'bus-stop',
+                }
+              : myRailStation
+                ? {
+                    id: `myrail:${myRailStation.stopId}`,
+                    name: `${myRailStation.category} ${myRailStation.displayName}`,
+                    subtitle: myRailStation.routeLongName,
+                    lat: myRailStation.lat,
+                    lon: myRailStation.lon,
+                    kind: 'station',
+                  }
+                : {
+                    id: 'kl:center',
+                    name: 'KL Sentral / Central KL',
+                    subtitle: 'Kuala Lumpur',
+                    lat: 3.1342,
+                    lon: 101.6861,
+                    kind: 'place',
+                  };
+          setJourneyEndpoints({ origin: defaultOrigin, destination: place });
+          if (!userLocation && !locating) {
+            locateUser(false);
+          }
+        }}
         onOpenTripPlanner={() => {
           setTripPlannerTab(showingBusPanel ? 'bus' : 'rail');
           setTripPlannerOpen(true);
@@ -1711,6 +1769,39 @@ export default function App() {
         onOpenMyRailSetup={() => setMyStationSetupMode('rail')}
         onOpenMyBusSetup={() => setMyStationSetupMode('bus')}
       />
+
+      {/* Full Multimodal Place-to-Place Journey Planner (Walk + Bus GPS + MRT/LRT + Bike!) */}
+      {journeyEndpoints && (
+        <JourneyPlannerView
+          origin={journeyEndpoints.origin}
+          destination={journeyEndpoints.destination}
+          railStations={railData?.stations || []}
+          railLines={railData?.lines || []}
+          liveVehicles={realtimeBusVehicles}
+          onSwap={() =>
+            setJourneyEndpoints((prev) =>
+              prev ? { origin: prev.destination, destination: prev.origin } : null
+            )
+          }
+          onChangeOrigin={() => {
+            setSearchPickTarget('origin');
+            setSearchOpen(true);
+          }}
+          onChangeDestination={() => {
+            setSearchPickTarget('destination');
+            setSearchOpen(true);
+          }}
+          onTrackLiveBus={(busId) => {
+            const found = realtimeBusVehicles.find((v) => v.id === busId);
+            if (found) {
+              setMode('bus');
+              handleSelectBus(found, true);
+            }
+          }}
+          onOpenStation={(stopId) => handleSelectStation(stopId, true)}
+          onBack={() => setJourneyEndpoints(null)}
+        />
+      )}
 
       {/* Quick Settings Sheet (Language, Google Font, My Stations, Refresh) */}
       <QuickSettingsModal

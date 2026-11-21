@@ -318,9 +318,7 @@ export function StationDepartureBoard({
         ) : (
           directions.map((dir) => {
             const first = dir.upcoming[0];
-            const isTimetable = scheduleMode === 'timetable';
-            const estTrains = dir.upcoming.slice(0, 4);
-            const isArrivingNow = first && !first.isTomorrow && first.minutesAway <= 1;
+            const estTrains = dir.upcoming.slice(0, 3);
 
             return (
               <div
@@ -329,7 +327,7 @@ export function StationDepartureBoard({
                 style={{ backgroundColor: palette.surfaceBg }}
               >
                 <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0 space-y-1">
+                  <div className="min-w-0 space-y-0.5">
                     <div className="flex items-center gap-1.5">
                       <ArrowRightCircle
                         className="w-4.5 h-4.5 shrink-0"
@@ -347,52 +345,51 @@ export function StationDepartureBoard({
                     )}
                   </div>
 
-                  {/* GIANT Rounded Transit Number */}
-                  {isTimetable ? (
-                    first && (
-                      <div className="text-right shrink-0">
-                        <div
-                          className="font-display text-4xl font-black tabular-nums leading-none"
-                          style={{
-                            color: first.isTomorrow
-                              ? '#fbbf24'
-                              : isArrivingNow
-                                ? '#4ade80'
-                                : palette.accent,
-                          }}
-                        >
-                          {first.isTomorrow ? first.arrivalTime : first.minutesAway}
+                  {/* Frequency Pill (Secondary) */}
+                  <span className="shrink-0 px-2.5 py-1 rounded-full bg-black/25 text-[11px] font-extrabold text-white/85">
+                    {dir.isPeakNow
+                      ? `${dir.currentHeadwayMinutes}m · ${t.peakHours}`
+                      : t.everyXMin(dir.currentHeadwayMinutes)}
+                  </span>
+                </div>
+
+                {/* Transit-App Style Horizontal Estimated Arrival Countdown Cards (5m · 15m · 25m + SCHEDULED badge!) */}
+                {first?.isTomorrow ? (
+                  <div className="px-3.5 py-3 rounded-2xl bg-amber-500/15 border border-amber-400/30 flex items-center justify-between gap-2">
+                    <span className="text-sm font-black text-amber-300">{t.serviceEnded}</span>
+                    <span className="text-xs font-bold text-amber-100 font-mono">
+                      {t.firstTrainAt(dir.firstTrain)}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-stretch gap-2 overflow-x-auto no-scrollbar">
+                    {estTrains.map((item, idx) => (
+                      <div
+                        key={`${item.arrivalTime}-${idx}`}
+                        className="min-w-[96px] flex-1 rounded-2xl p-3 text-center flex flex-col items-center justify-center shadow-sm"
+                        style={{
+                          backgroundColor: idx === 0 ? palette.vivid : 'rgba(0,0,0,0.24)',
+                        }}
+                      >
+                        <div className="font-display text-3xl font-black text-white leading-none tabular-nums">
+                          {item.minutesAway <= 0 ? '<1' : item.minutesAway}
                         </div>
-                        <div className="text-[11px] font-bold mt-0.5" style={{ color: palette.muted }}>
-                          {first.isTomorrow ? t.firstTrainShort : t.minutesWord}
+                        <div className="text-[11px] font-bold text-white/90 mt-0.5">
+                          {t.minutesWord} · ~{item.arrivalTime}
                         </div>
-                      </div>
-                    )
-                  ) : first?.isTomorrow ? (
-                    <div className="text-right shrink-0">
-                      <div className="font-display text-base font-black text-amber-300 leading-tight">
-                        {t.serviceEnded}
-                      </div>
-                      <div className="text-xs font-bold mt-0.5" style={{ color: palette.muted }}>
-                        {dir.firstTrain}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-right shrink-0">
-                      <div className="flex items-baseline justify-end gap-0.5">
-                        <span
-                          className="font-display text-4xl font-black tabular-nums leading-none"
-                          style={{ color: palette.accent }}
-                        >
-                          {dir.currentHeadwayMinutes}
+                        <span className="mt-1.5 px-2 py-0.5 rounded-md bg-white/90 text-slate-950 text-[9px] font-black tracking-wide uppercase">
+                          {scheduleMode === 'timetable'
+                            ? lang === 'en'
+                              ? 'TIMETABLE'
+                              : 'LỊCH TRÌNH'
+                            : lang === 'en'
+                              ? 'SCHEDULED'
+                              : 'DỰ KIẾN'}
                         </span>
                       </div>
-                      <div className="text-[11px] font-extrabold mt-0.5" style={{ color: palette.muted }}>
-                        {dir.isPeakNow ? t.peakHours : t.freqUnitLabel}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* Clean First - Last Train Strip + 1-Tap Google Maps Transit check for THIS direction */}
                 <div className="px-3.5 py-2 rounded-2xl bg-black/22 flex items-center justify-between gap-2 text-xs font-bold flex-wrap">
@@ -404,7 +401,6 @@ export function StationDepartureBoard({
                   <button
                     type="button"
                     onClick={() => {
-                      // Open Google Maps transit from THIS station -> next stop along this exact direction
                       const nextSt = dir.nextStopName
                         ? allStations.find(
                             (s) =>
@@ -440,23 +436,6 @@ export function StationDepartureBoard({
                     <ExternalLink className="w-3 h-3" />
                   </button>
                 </div>
-
-                {/* Subtle Static GTFS Reference Times (~HH:MM) */}
-                {!first?.isTomorrow && estTrains.length > 0 && (
-                  <div className="flex items-center justify-between gap-2 text-xs">
-                    <span className="shrink-0 opacity-70" style={{ color: palette.muted }}>
-                      {isTimetable ? t.followingTrains : t.estStaticTimesLabel}
-                    </span>
-                    <div className="flex items-center gap-2 font-mono font-bold text-white/85 overflow-x-auto no-scrollbar">
-                      {estTrains.map((item, idx) => (
-                        <span key={`${item.arrivalTime}-${idx}`} className="whitespace-nowrap">
-                          {idx > 0 && <span className="opacity-40 mr-2">·</span>}
-                          {isTimetable ? item.arrivalTime : `~${item.arrivalTime}`}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
             );
           })

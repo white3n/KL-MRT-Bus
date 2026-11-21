@@ -121,7 +121,8 @@ async function startServer() {
       const targetUrl = typeof req.query.url === 'string' ? req.query.url : '';
       const allowed =
         targetUrl.startsWith('https://api.data.gov.my/gtfs-static/') ||
-        targetUrl.startsWith('https://api.data.gov.my/gtfs-realtime/');
+        targetUrl.startsWith('https://api.data.gov.my/gtfs-realtime/') ||
+        targetUrl.startsWith('https://photon.komoot.io/api/');
       if (!allowed) {
         res.status(400).json({ error: 'Invalid GTFS feed URL.' });
         return;

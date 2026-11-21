@@ -3,7 +3,8 @@ export async function onRequestGet(context) {
   const targetUrl = url.searchParams.get('url') || '';
   const allowed =
     targetUrl.startsWith('https://api.data.gov.my/gtfs-static/') ||
-    targetUrl.startsWith('https://api.data.gov.my/gtfs-realtime/');
+    targetUrl.startsWith('https://api.data.gov.my/gtfs-realtime/') ||
+    targetUrl.startsWith('https://photon.komoot.io/api/');
 
   if (!allowed) {
     return new Response(JSON.stringify({ error: 'Invalid GTFS feed URL.' }), {
