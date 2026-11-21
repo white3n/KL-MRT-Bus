@@ -23,7 +23,32 @@ import type {
 
 const API_BASE = 'https://api.data.gov.my';
 const STATIC_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
-const REALTIME_CACHE_TTL_MS = 5 * 1000; // 5 seconds for high-precision live updates
+const REALTIME_CACHE_TTL_MS = 2000; // 2 seconds staggered real-time updates
+
+class RateLimitError extends Error {
+  public readonly retryAfterSec: number;
+  constructor(retryAfterSec: number, url: string) {
+    super(`HTTP 429 throttled (${retryAfterSec}s) fetching ${url}`);
+    this.retryAfterSec = retryAfterSec;
+  }
+}
+
+function parseThrottleSeconds(bodyText: string, retryAfterHeader?: string | null): number {
+  if (retryAfterHeader) {
+    const parsed = Number.parseInt(retryAfterHeader, 10);
+    if (Number.isFinite(parsed) && parsed > 0) return Math.min(30, parsed);
+  }
+  const m = bodyText.match(/(\d+)\s*second/i);
+  if (m) {
+    const sec = Number.parseInt(m[1], 10);
+    if (Number.isFinite(sec) && sec > 0) return Math.min(30, sec);
+  }
+  return 6;
+}
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 // Official high-contrast color overrides where raw GTFS hex is hard to read on light UI
 const RAIL_COLOR_MAP: Record<string, { color: string; textColor: string }> = {
@@ -65,10 +90,18 @@ interface RailTrip {
   shapeId: string;
 }
 
+interface RailCalendarRule {
+  serviceId: string;
+  days: [boolean, boolean, boolean, boolean, boolean, boolean, boolean]; // Mon..Sun
+  startDate: string;
+  endDate: string;
+}
+
 interface RailStaticStore {
   lines: RailLine[];
   stations: RailStation[];
   stationsById: Map<string, RailStation>;
+  calendarByServiceId: Map<string, RailCalendarRule>;
   tripsById: Map<string, RailTrip>;
   tripsByRoute: Map<string, RailTrip[]>;
   stopTimesByTrip: Map<string, RailStopTime[]>;
@@ -231,6 +264,8 @@ export function getMalaysiaNow(): {
   secondsSinceMidnight: number;
   timeStr: string;
   dateStr: string;
+  yyyymmdd: string;
+  weekdayIndex: number;
   dayType: 'MonFri' | 'Sat' | 'Sun';
 } {
   const now = new Date();
@@ -251,6 +286,16 @@ export function getMalaysiaNow(): {
   const minute = Number.parseInt(get('minute'), 10);
   const second = Number.parseInt(get('second'), 10);
   const weekday = get('weekday');
+  const wdMap: Record<string, number> = {
+    Mon: 0,
+    Tue: 1,
+    Wed: 2,
+    Thu: 3,
+    Fri: 4,
+    Sat: 5,
+    Sun: 6,
+  };
+  const weekdayIndex = wdMap[weekday] ?? 0;
   let dayType: 'MonFri' | 'Sat' | 'Sun' = 'MonFri';
   if (weekday === 'Sat') dayType = 'Sat';
   else if (weekday === 'Sun') dayType = 'Sun';
@@ -259,8 +304,34 @@ export function getMalaysiaNow(): {
     secondsSinceMidnight: hour * 3600 + minute * 60 + second,
     timeStr: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`,
     dateStr: `${get('day')}/${get('month')}/${get('year')}`,
+    yyyymmdd: `${get('year')}${get('month')}${get('day')}`,
+    weekdayIndex,
     dayType,
   };
+}
+
+function resolveActiveServiceIds(
+  calendarByServiceId: Map<string, RailCalendarRule>,
+  weekdayIndex: number,
+  yyyymmdd: string,
+  fallbackDayType: 'MonFri' | 'Sat' | 'Sun'
+): Set<string> {
+  const activeWithDate = new Set<string>();
+  const activeByDayOnly = new Set<string>();
+
+  for (const rule of calendarByServiceId.values()) {
+    if (!rule.days[weekdayIndex]) continue;
+    activeByDayOnly.add(rule.serviceId);
+    const afterStart = !rule.startDate || yyyymmdd >= rule.startDate;
+    const beforeEnd = !rule.endDate || yyyymmdd <= rule.endDate;
+    if (afterStart && beforeEnd) {
+      activeWithDate.add(rule.serviceId);
+    }
+  }
+
+  if (activeWithDate.size > 0) return activeWithDate;
+  if (activeByDayOnly.size > 0) return activeByDayOnly;
+  return new Set([fallbackDayType]);
 }
 
 function parseDestinationFromHeadsign(headsign: string): { origin: string; destination: string } {
@@ -287,6 +358,10 @@ async function fetchWithTimeout(url: string, timeoutMs = 20000): Promise<Respons
         'User-Agent': 'KLTransitLive/1.0 (+https://data.gov.my)',
       },
     });
+    if (res.status === 429) {
+      const txt = await res.text().catch(() => '');
+      throw new RateLimitError(parseThrottleSeconds(txt, res.headers.get('retry-after')), url);
+    }
     if (!res.ok) {
       throw new Error(`HTTP ${res.status} fetching ${url}`);
     }
@@ -303,20 +378,26 @@ class GtfsService {
   private busStaticStores: Map<BusCategory, BusCategoryStaticStore> = new Map();
   private busStaticLoadingPromise: Promise<void> | null = null;
 
+  private busCategoryCache: Map<
+    BusCategory,
+    { vehicles: LiveBusVehicle[]; fetchedAt: number }
+  > = new Map();
   private busRealtimeCache: BusRealtimeCache | null = null;
   private busRealtimePromise: Promise<BusRealtimeCache> | null = null;
+  private nextPollCategoryIndex = 0;
+  private throttleUntilMs = 0;
 
   private busRouteShapeCache: Map<string, { shapePoints: [number, number][]; stops: BusStopPoint[] }> =
     new Map();
 
   public warmup(): void {
-    // Non-blocking warmup on server startup
-    this.ensureRailLoaded().catch((err) => {
-      console.error('[GTFS] Rail warmup error:', err.message);
-    });
-    this.ensureBusStaticLoaded().catch((err) => {
-      console.error('[GTFS] Bus static warmup error:', err.message);
-    });
+    // Non-blocking staggered warmup on server startup to avoid api.data.gov.my burst 429
+    this.ensureRailLoaded()
+      .then(() => sleepMs(1500))
+      .then(() => this.ensureBusStaticLoaded())
+      .catch((err) => {
+        console.error('[GTFS] Warmup error:', err.message);
+      });
   }
 
   public async ensureRailLoaded(force = false): Promise<RailStaticStore> {
@@ -349,10 +430,32 @@ class GtfsService {
 
     const routesRows = parseCsv(readZipEntryText(zip, 'routes.txt'));
     const stopsRows = parseCsv(readZipEntryText(zip, 'stops.txt'));
+    const calendarRows = parseCsv(readZipEntryText(zip, 'calendar.txt'));
     const tripsRows = parseCsv(readZipEntryText(zip, 'trips.txt'));
     const stopTimesRows = parseCsv(readZipEntryText(zip, 'stop_times.txt'));
     const frequenciesRows = parseCsv(readZipEntryText(zip, 'frequencies.txt'));
     const shapesRows = parseCsv(readZipEntryText(zip, 'shapes.txt'));
+
+    // 0. Parse calendar.txt rules (Weekday / Saturday / Sunday)
+    const calendarByServiceId = new Map<string, RailCalendarRule>();
+    for (const row of calendarRows) {
+      const sid = (row.service_id || '').trim();
+      if (!sid) continue;
+      calendarByServiceId.set(sid, {
+        serviceId: sid,
+        days: [
+          row.monday === '1',
+          row.tuesday === '1',
+          row.wednesday === '1',
+          row.thursday === '1',
+          row.friday === '1',
+          row.saturday === '1',
+          row.sunday === '1',
+        ],
+        startDate: (row.start_date || '').trim(),
+        endDate: (row.end_date || '').trim(),
+      });
+    }
 
     // 1. Parse shapes grouped by shape_id
     const shapesById = new Map<string, { seq: number; lat: number; lon: number }[]>();
@@ -594,6 +697,7 @@ class GtfsService {
       lines,
       stations,
       stationsById,
+      calendarByServiceId,
       tripsById,
       tripsByRoute,
       stopTimesByTrip,
@@ -634,62 +738,104 @@ class GtfsService {
     }
 
     let dayType: 'MonFri' | 'Sat' | 'Sun' = myt.dayType;
-    if (options?.day === 'weekday' || options?.day === 'MonFri') dayType = 'MonFri';
-    else if (options?.day === 'sat' || options?.day === 'Sat') dayType = 'Sat';
-    else if (options?.day === 'sun' || options?.day === 'Sun') dayType = 'Sun';
+    let targetWeekdayIdx = myt.weekdayIndex;
+    if (options?.day === 'weekday' || options?.day === 'MonFri') {
+      dayType = 'MonFri';
+      targetWeekdayIdx = 2;
+    } else if (options?.day === 'sat' || options?.day === 'Sat') {
+      dayType = 'Sat';
+      targetWeekdayIdx = 5;
+    } else if (options?.day === 'sun' || options?.day === 'Sun') {
+      dayType = 'Sun';
+      targetWeekdayIdx = 6;
+    }
+
+    const activeServiceIds = resolveActiveServiceIds(
+      store.calendarByServiceId,
+      targetWeekdayIdx,
+      myt.yyyymmdd,
+      dayType
+    );
 
     const routeTrips = store.tripsByRoute.get(station.routeId) || [];
-    const activeTrips = routeTrips.filter((t) => t.serviceId === dayType);
-    // Fallback if a route only defines MonFri
-    const candidateTrips = activeTrips.length > 0 ? activeTrips : routeTrips.slice(0, 2);
+    const activeTrips = routeTrips.filter((t) => activeServiceIds.has(t.serviceId));
+    const candidateTrips = activeTrips.length > 0 ? activeTrips : routeTrips;
+
+    const tripsByDir = new Map<string, RailTrip[]>();
+    for (const trip of candidateTrips) {
+      const dirKey = trip.directionId || '0';
+      const arr = tripsByDir.get(dirKey) || [];
+      arr.push(trip);
+      tripsByDir.set(dirKey, arr);
+    }
 
     const directions: DirectionDepartures[] = [];
+    let usedFrequencyExpansion = false;
+    let usedExplicitTimetable = false;
 
-    for (const trip of candidateTrips) {
-      const stopTimes = store.stopTimesByTrip.get(trip.tripId);
-      if (!stopTimes || stopTimes.length === 0) continue;
-
-      const idx = stopTimes.findIndex((st) => st.stopId === stopId);
-      if (idx === -1) continue;
-
-      // Skip alighting-only terminus where passengers cannot board this direction
-      if (idx === stopTimes.length - 1) continue;
-
-      const firstStop = stopTimes[0];
-      const currentStop = stopTimes[idx];
-      const nextStopEntry = stopTimes[idx + 1];
-      const nextStopMeta = nextStopEntry ? store.stationsById.get(nextStopEntry.stopId) : null;
-
-      const travelOffsetSec = Math.max(0, currentStop.arrivalSec - firstStop.departureSec);
-      const nextStopMinutes = nextStopEntry
-        ? Math.max(1, Math.round((nextStopEntry.arrivalSec - currentStop.departureSec) / 60))
-        : null;
-
-      const freqs = store.frequenciesByTrip.get(trip.tripId) || [];
+    for (const [directionId, dirTrips] of tripsByDir.entries()) {
       const allArrivals: { arrSec: number; headwaySec: number }[] = [];
-      const seenOriginDeps = new Set<number>();
+      const seenArrivals = new Set<number>();
+      let repTrip: RailTrip | null = null;
+      let nextStopMeta: RailStation | null = null;
+      let nextStopMinutes: number | null = null;
 
-      if (freqs.length > 0) {
-        for (const f of freqs) {
-          const step = Math.max(60, f.headwaySec);
-          for (let originDep = f.startSec; originDep <= f.endSec; originDep += step) {
-            if (seenOriginDeps.has(originDep)) continue;
-            seenOriginDeps.add(originDep);
-            allArrivals.push({
-              arrSec: originDep + travelOffsetSec,
-              headwaySec: f.headwaySec,
-            });
+      for (const trip of dirTrips) {
+        const stopTimes = store.stopTimesByTrip.get(trip.tripId);
+        if (!stopTimes || stopTimes.length === 0) continue;
+
+        const idx = stopTimes.findIndex((st) => st.stopId === stopId);
+        if (idx === -1 || idx === stopTimes.length - 1) continue;
+
+        const firstStop = stopTimes[0];
+        const currentStop = stopTimes[idx];
+        const nextStopEntry = stopTimes[idx + 1];
+
+        if (!repTrip) {
+          repTrip = trip;
+          nextStopMeta = nextStopEntry ? store.stationsById.get(nextStopEntry.stopId) || null : null;
+          nextStopMinutes = nextStopEntry
+            ? Math.max(1, Math.round((nextStopEntry.arrivalSec - currentStop.departureSec) / 60))
+            : null;
+        }
+
+        const freqs = store.frequenciesByTrip.get(trip.tripId) || [];
+        if (freqs.length > 0) {
+          // Official GTFS frequencies.txt spec: offset from first stop's arrival_time
+          usedFrequencyExpansion = true;
+          const travelOffsetSec = Math.max(0, currentStop.arrivalSec - firstStop.arrivalSec);
+          for (const f of freqs) {
+            const step = Math.max(60, f.headwaySec);
+            for (let originDep = f.startSec; originDep <= f.endSec; originDep += step) {
+              const arrSec = originDep + travelOffsetSec;
+              if (seenArrivals.has(arrSec)) continue;
+              seenArrivals.add(arrSec);
+              allArrivals.push({ arrSec, headwaySec: f.headwaySec });
+            }
+          }
+        } else {
+          // Explicit per-trip arrival_time from stop_times.txt
+          usedExplicitTimetable = true;
+          const arrSec = currentStop.arrivalSec;
+          if (!seenArrivals.has(arrSec)) {
+            seenArrivals.add(arrSec);
+            allArrivals.push({ arrSec, headwaySec: 0 });
           }
         }
-      } else {
-        allArrivals.push({
-          arrSec: currentStop.arrivalSec,
-          headwaySec: 300,
-        });
       }
 
+      if (!repTrip || allArrivals.length === 0) continue;
+
       allArrivals.sort((a, b) => a.arrSec - b.arrSec);
-      if (allArrivals.length === 0) continue;
+
+      for (let i = 0; i < allArrivals.length; i++) {
+        if (allArrivals[i].headwaySec <= 0) {
+          const prevGap = i > 0 ? allArrivals[i].arrSec - allArrivals[i - 1].arrSec : 0;
+          const nextGap =
+            i < allArrivals.length - 1 ? allArrivals[i + 1].arrSec - allArrivals[i].arrSec : 0;
+          allArrivals[i].headwaySec = nextGap || prevGap || 600;
+        }
+      }
 
       const firstTrainSec = allArrivals[0].arrSec;
       const lastTrainSec = allArrivals[allArrivals.length - 1].arrSec;
@@ -741,13 +887,13 @@ class GtfsService {
         }
       }
 
-      const { origin, destination } = parseDestinationFromHeadsign(trip.headsign);
+      const { origin, destination } = parseDestinationFromHeadsign(repTrip.headsign);
       const nextUpcoming = upcoming[0];
 
       directions.push({
-        directionId: trip.directionId,
-        tripId: trip.tripId,
-        headsign: trip.headsign,
+        directionId,
+        tripId: repTrip.tripId,
+        headsign: repTrip.headsign,
         destinationName: destination,
         originName: origin,
         nextStopName: nextStopMeta ? nextStopMeta.displayName : null,
@@ -772,15 +918,22 @@ class GtfsService {
         isCurrent: s.stopId === stopId,
       }));
 
+    const scheduleMode: 'timetable' | 'frequency' =
+      usedExplicitTimetable && !usedFrequencyExpansion ? 'timetable' : 'frequency';
+
     return {
       station,
       queryTimeMyt: isLiveTime ? myt.timeStr.slice(0, 5) : formatSecToHHMM(querySec),
       isLiveTime,
       dayType,
+      scheduleMode,
+      gtfsSyncedAt: new Date(store.loadedAt).toISOString(),
       directions,
       lineStations,
       dataNotice:
-        'Tính từ lịch tần suất chính thức GTFS Prasarana (api.data.gov.my) theo giờ Kuala Lumpur (MYT · UTC+8).',
+        scheduleMode === 'timetable'
+          ? 'Lịch trình từng chuyến trực tiếp từ stop_times.txt + calendar.txt GTFS Prasarana (api.data.gov.my) theo giờ KL (MYT · UTC+8).'
+          : 'Dữ liệu mở api.data.gov.my của Prasarana hiện chỉ công bố lịch tĩnh theo tần suất (stop_times.txt + calendar.txt + frequencies.txt) và không có luồng GPS tàu trực tiếp, nên giờ tàu thực tế trên bảng LED tại ga có thể lệch vài phút.',
     };
   }
 
@@ -793,13 +946,20 @@ class GtfsService {
     if (!force && allFresh) return;
     if (this.busStaticLoadingPromise) return this.busStaticLoadingPromise;
 
-    this.busStaticLoadingPromise = Promise.all(
-      categories.map((cat) => this.loadBusStaticCategory(cat))
-    )
-      .then(() => undefined)
-      .finally(() => {
-        this.busStaticLoadingPromise = null;
-      });
+    this.busStaticLoadingPromise = (async () => {
+      for (const cat of categories) {
+        const existing = this.busStaticStores.get(cat);
+        if (!force && existing && Date.now() - existing.loadedAt < STATIC_CACHE_TTL_MS) {
+          continue;
+        }
+        const waitMs = Math.max(0, this.throttleUntilMs - Date.now());
+        if (waitMs > 0) await sleepMs(waitMs + 250);
+        await this.loadBusStaticCategory(cat);
+        await sleepMs(1500);
+      }
+    })().finally(() => {
+      this.busStaticLoadingPromise = null;
+    });
 
     return this.busStaticLoadingPromise;
   }
@@ -971,43 +1131,79 @@ class GtfsService {
     route?: string;
     force?: boolean;
   }): Promise<LiveBusesPayload> {
-    // Trigger static load if not started yet (don't block long if already warming up)
     if (this.busStaticStores.size === 0 && !this.busStaticLoadingPromise) {
-      this.ensureBusStaticLoaded().catch(() => {});
+      setTimeout(() => {
+        if (this.busStaticStores.size === 0 && !this.busStaticLoadingPromise) {
+          this.ensureBusStaticLoaded().catch(() => {});
+        }
+      }, 2500);
     }
 
+    const now = Date.now();
     let cache = this.busRealtimeCache;
-    const isExpired = !cache || Date.now() - cache.fetchedAt > REALTIME_CACHE_TTL_MS;
+    const isExpired = !cache || now - cache.fetchedAt > REALTIME_CACHE_TTL_MS;
+    const isThrottled = now < this.throttleUntilMs;
 
-    if (options?.force || isExpired) {
+    if ((options?.force || isExpired) && !isThrottled) {
       if (!this.busRealtimePromise) {
         this.busRealtimePromise = (async () => {
-          const [klRes, feederRes] = await Promise.allSettled([
-            this.fetchRealtimeCategory('rapid-bus-kl'),
-            this.fetchRealtimeCategory('rapid-bus-mrtfeeder'),
-          ]);
+          const categories: BusCategory[] = ['rapid-bus-kl', 'rapid-bus-mrtfeeder'];
+          const klEntry = this.busCategoryCache.get('rapid-bus-kl');
+          const feederEntry = this.busCategoryCache.get('rapid-bus-mrtfeeder');
 
-          const combined: LiveBusVehicle[] = [];
+          let targetCat: BusCategory;
+          if (!klEntry && !feederEntry) {
+            targetCat =
+              options?.category === 'rapid-bus-mrtfeeder' ? 'rapid-bus-mrtfeeder' : 'rapid-bus-kl';
+          } else if (!feederEntry) {
+            targetCat = 'rapid-bus-mrtfeeder';
+          } else if (!klEntry) {
+            targetCat = 'rapid-bus-kl';
+          } else if (
+            options?.category === 'rapid-bus-kl' ||
+            options?.category === 'rapid-bus-mrtfeeder'
+          ) {
+            const otherCat: BusCategory =
+              options.category === 'rapid-bus-kl' ? 'rapid-bus-mrtfeeder' : 'rapid-bus-kl';
+            const otherEntry = this.busCategoryCache.get(otherCat);
+            const otherAge = otherEntry ? Date.now() - otherEntry.fetchedAt : Infinity;
+            targetCat = otherAge > 16000 ? otherCat : options.category;
+          } else {
+            targetCat = categories[this.nextPollCategoryIndex % 2];
+            this.nextPollCategoryIndex += 1;
+          }
+
+          try {
+            const freshVehicles = await this.fetchRealtimeCategory(targetCat);
+            this.busCategoryCache.set(targetCat, {
+              vehicles: freshVehicles,
+              fetchedAt: Date.now(),
+            });
+          } catch (err) {
+            if (err instanceof RateLimitError) {
+              this.throttleUntilMs = Date.now() + (err.retryAfterSec + 1) * 1000;
+            }
+          }
+
+          const nowSec = Math.floor(Date.now() / 1000);
+          const klNow = this.busCategoryCache.get('rapid-bus-kl');
+          const feederNow = this.busCategoryCache.get('rapid-bus-mrtfeeder');
+
+          const combined: LiveBusVehicle[] = [
+            ...(klNow?.vehicles || []),
+            ...(feederNow?.vehicles || []),
+          ].map((v) => ({
+            ...v,
+            updatedSecondsAgo: Math.max(0, nowSec - v.timestamp),
+          }));
+
           const warnings: string[] = [];
-
-          if (klRes.status === 'fulfilled') {
-            combined.push(...klRes.value);
-          } else {
-            warnings.push('Rapid Bus KL tạm thời gián đoạn');
+          const staleCutoffMs = 90_000;
+          if (klNow && Date.now() - klNow.fetchedAt > staleCutoffMs) {
+            warnings.push('Rapid Bus KL đang chờ đồng bộ từ api.data.gov.my');
           }
-
-          if (feederRes.status === 'fulfilled') {
-            combined.push(...feederRes.value);
-          } else {
-            warnings.push('MRT Feeder tạm thời gián đoạn');
-          }
-
-          if (combined.length === 0 && this.busRealtimeCache) {
-            return {
-              ...this.busRealtimeCache,
-              staleWarning:
-                'Đang hiển thị vị trí gần nhất do cổng api.data.gov.my phản hồi chậm.',
-            };
+          if (feederNow && Date.now() - feederNow.fetchedAt > staleCutoffMs) {
+            warnings.push('MRT Feeder đang chờ đồng bộ từ api.data.gov.my');
           }
 
           const nextCache: BusRealtimeCache = {

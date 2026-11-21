@@ -2,32 +2,86 @@
 @import "leaflet/dist/leaflet.css";
 
 @theme {
-  --font-display: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
-  --font-sans: "DM Sans", system-ui, -apple-system, sans-serif;
+  --font-display: "Be Vietnam Pro", system-ui, -apple-system, sans-serif;
+  --font-sans: "Be Vietnam Pro", system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
+:root {
+  --app-font-family: "Be Vietnam Pro", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --app-font-scale: 100%;
+}
+
 @layer base {
+  html {
+    font-size: var(--app-font-scale, 100%);
+    font-family: var(--app-font-family);
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    height: 100dvh;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    overscroll-behavior: none;
+  }
+
   body {
-    font-family: var(--font-sans);
-    background-color: #f8fafc;
+    font-family: var(--app-font-family);
+    background-color: #ffffff;
     color: #0f172a;
     overflow: hidden;
   }
 
-  h1, h2, h3, h4 {
-    font-family: var(--font-display);
+  h1, h2, h3, h4, button, input, select, textarea {
+    font-family: var(--app-font-family);
   }
+}
+
+.font-display,
+.font-sans {
+  font-family: var(--app-font-family) !important;
+}
+
+/* Keep tabular numerals & codes crisp and fixed-width so switching fonts never breaks UI cards */
+.font-mono {
+  font-family: var(--font-mono) !important;
 }
 
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
 
+/* Safe-area support for standalone PWA & Android edge-to-edge WebView */
+.safe-area-shell {
+  padding-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  padding-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  padding-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+}
+
+.safe-area-bottom-float {
+  bottom: calc(1rem + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+}
+
 /* Clean Leaflet overrides to match Precision Transit Wayfinding aesthetic */
 .leaflet-container {
-  font-family: var(--font-sans) !important;
+  font-family: var(--app-font-family) !important;
   background-color: #eef2f6 !important;
+  width: 100%;
+  height: 100%;
+}
+
+/* Prevent Tailwind CSS v4 preflight img rules from clipping or distorting Leaflet tiles */
+.leaflet-container img.leaflet-tile,
+.leaflet-pane img {
+  max-width: none !important;
+  max-height: none !important;
 }
 
 .leaflet-popup-content-wrapper {
@@ -47,12 +101,47 @@
 
 .leaflet-control-attribution {
   font-size: 10px !important;
-  background: rgba(255, 255, 255, 0.85) !important;
+  background: rgba(255, 255, 255, 0.88) !important;
   backdrop-filter: blur(4px);
   color: #64748b !important;
 }
 
+/* Material 3 styled Leaflet zoom control */
+.leaflet-control-zoom {
+  border: 1px solid rgba(226, 232, 240, 0.95) !important;
+  border-radius: 16px !important;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12) !important;
+}
+
+.leaflet-control-zoom a {
+  width: 40px !important;
+  height: 40px !important;
+  line-height: 40px !important;
+  font-size: 18px !important;
+  color: #0f172a !important;
+  background-color: rgba(255, 255, 255, 0.96) !important;
+  border-bottom-color: #e2e8f0 !important;
+}
+
+.leaflet-control-zoom a:hover {
+  background-color: #f1f5f9 !important;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 /* Subtle custom scrollbars for transit lists */
+.transit-scroll {
+  -webkit-overflow-scrolling: touch;
+}
+
 .transit-scroll::-webkit-scrollbar {
   width: 6px;
   height: 6px;

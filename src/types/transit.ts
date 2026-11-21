@@ -83,6 +83,8 @@ export interface StationDeparturePayload {
   queryTimeMyt: string;
   isLiveTime: boolean;
   dayType: 'MonFri' | 'Sat' | 'Sun';
+  scheduleMode?: 'timetable' | 'frequency';
+  gtfsSyncedAt?: string;
   directions: DirectionDepartures[];
   lineStations: {
     stopId: string;
@@ -191,4 +193,77 @@ export interface NearbyTransitPayload {
   railStations: NearbyRailStation[];
   busStops: NearbyBusStop[];
   busStopsLoaded: boolean;
+}
+
+export interface BusStopSearchItem {
+  stopId: string;
+  stopCode: string;
+  stopName: string;
+  category: BusCategory;
+  lat: number;
+  lon: number;
+  routeNames: string[];
+}
+
+export interface BusTripApproachingLive {
+  busId: string;
+  licensePlate: string;
+  speedKmh: number;
+  waitMinutes: number;
+  stopsAway: number;
+  distanceMeters: number;
+  updatedSecondsAgo: number;
+}
+
+export interface BusTripLeg {
+  category: BusCategory;
+  routeId: string;
+  routeShortName: string;
+  routeLongName: string;
+  headsign: string;
+  color: string;
+  boardStop: BusStopPoint;
+  alightStop: BusStopPoint;
+  stopCount: number;
+  distanceKm: number;
+  rideMinutes: number;
+  fareMyr: number;
+  isFlatRate: boolean;
+  approachingBuses: BusTripApproachingLive[];
+  scheduledWaitMin: number;
+}
+
+export interface BusTripOption {
+  id: string;
+  legs: BusTripLeg[];
+  transferCount: number;
+  walkToBoardMeters: number;
+  walkFromAlightMeters: number;
+  waitMinutes: number;
+  hasLiveBus: boolean;
+  totalRideMinutes: number;
+  totalMinutes: number;
+  totalStops: number;
+  totalDistanceKm: number;
+  totalFareMyr: number;
+}
+
+export interface BusTripPlanPayload {
+  fromStop: BusStopSearchItem;
+  toStop: BusStopSearchItem;
+  options: BusTripOption[];
+  staticReady: boolean;
+}
+
+export interface MyBusStationArrival {
+  bus: LiveBusVehicle;
+  routeShortName: string;
+  routeLongName: string;
+  headsign: string;
+  category: BusCategory;
+  color: string;
+  stopsAway: number;
+  distanceMeters: number;
+  etaMinutes: number;
+  isArrivingNow: boolean;
 }

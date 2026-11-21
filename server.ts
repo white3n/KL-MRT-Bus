@@ -115,6 +115,40 @@ async function startServer() {
     }
   });
 
+  // Safe allowlisted binary proxy for api.data.gov.my GTFS feeds (web mobile / iOS Safari CORS support)
+  app.get('/api/gtfs-proxy', async (req, res) => {
+    try {
+      const targetUrl = typeof req.query.url === 'string' ? req.query.url : '';
+      const allowed =
+        targetUrl.startsWith('https://api.data.gov.my/gtfs-static/') ||
+        targetUrl.startsWith('https://api.data.gov.my/gtfs-realtime/');
+      if (!allowed) {
+        res.status(400).json({ error: 'Invalid GTFS feed URL.' });
+        return;
+      }
+      const upstream = await fetch(targetUrl, {
+        headers: { 'User-Agent': 'KLTransitLive/2.0 (+https://data.gov.my)' },
+      });
+      if (!upstream.ok) {
+        res.status(upstream.status).json({ error: `Upstream HTTP ${upstream.status}` });
+        return;
+      }
+      const buf = Buffer.from(await upstream.arrayBuffer());
+      res.setHeader(
+        'Content-Type',
+        upstream.headers.get('content-type') || 'application/octet-stream'
+      );
+      res.setHeader(
+        'Cache-Control',
+        targetUrl.includes('gtfs-static') ? 'public, max-age=3600' : 'no-store'
+      );
+      res.send(buf);
+    } catch (err) {
+      console.error('[API /gtfs-proxy] Error:', err);
+      res.status(502).json({ error: 'Unable to reach api.data.gov.my' });
+    }
+  });
+
   // Vite middleware for development or static serving for production
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
@@ -150,7 +184,18 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.resolve(__dirname, 'dist');
-    app.use(express.static(distPath));
+    app.use(
+      express.static(distPath, {
+        setHeaders(res, filePath) {
+          if (filePath.endsWith('service-worker.js')) {
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.setHeader('Service-Worker-Allowed', '/');
+          } else if (filePath.endsWith('manifest.json')) {
+            res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+          }
+        },
+      })
+    );
     app.get('*', (_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
