@@ -1,0 +1,6 @@
+android/
+*.apk
+node_modules/
+dist/
+.git/
+bun.lock
